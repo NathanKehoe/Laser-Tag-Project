@@ -1,95 +1,75 @@
 import tkinter as tk
-from tkinter import messagebox
 from PIL import Image, ImageTk
 
+# Splash screen function
+def show_splash_screen():
+    splash_root = tk.Tk()
+    splash_root.overrideredirect(True)
+    splash_root.geometry("1200x600+100+50")  # Set the same size as the player entry screen
 
+    splash_image = Image.open("assets/splash_image.png")
+    splash_image = splash_image.resize((1200, 600), Image.Resampling.LANCZOS)  # Adjust image size
+
+    splash_photo = ImageTk.PhotoImage(splash_image)
+    splash_label = tk.Label(splash_root, image=splash_photo)
+    splash_label.pack()
+
+    def show_main_screen():
+        splash_root.destroy()
+        main_screen()
+
+    splash_root.after(3000, show_main_screen)  # Display for 3 seconds
+    splash_root.mainloop()
+
+# Main screen function
 def main_screen():
     root = tk.Tk()
-    root.title("Player Entry Screen")
+    root.title("Entry Terminal")
     root.geometry("1200x600")
+    root.configure(bg="black")
 
-    num_players_per_team = 4 
+    # Creating frames for Red Team and Green Team
+    red_team_frame = tk.Frame(root, bg="#500000", bd=2, relief="ridge", width=580, height=480)
+    red_team_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
-    team1_name_vars = []
-    team1_equipment_id_vars = []
-    team2_name_vars = []
-    team2_equipment_id_vars = []
+    green_team_frame = tk.Frame(root, bg="#004d00", bd=2, relief="ridge", width=580, height=480)
+    green_team_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
-    def start_game(event=None):
-        messagebox.showinfo("Start", "Starting the game...")
+    # Team Labels
+    tk.Label(red_team_frame, text="RED TEAM", font=("Arial", 14, "bold"), bg="#500000", fg="white").grid(row=0, column=0, columnspan=4)
+    tk.Label(green_team_frame, text="GREEN TEAM", font=("Arial", 14, "bold"), bg="#004d00", fg="white").grid(row=0, column=0, columnspan=4)
 
-    def retrieve_player_data():
-        for i in range(num_players_per_team):
-            player_name = team1_name_vars[i].get()
-            equipment_id = team1_equipment_id_vars[i].get()
-            print(f"Team 1 Player {i+1}: Name = {player_name}, Equipment ID = {equipment_id}")
-        
-        for i in range(num_players_per_team):
-            player_name = team2_name_vars[i].get()
-            equipment_id = team2_name_vars[i].get()
-            print(f"Team 2 Player {i+1}: Name = {player_name}, Equipment ID = {equipment_id}")
+    # Player entry slots for both teams
+    num_players = 18
 
-    def clear_entries(event=None):
-        for i in range(num_players_per_team):
-            team1_name_vars[i].set("")
-            team1_equipment_id_vars[i].set("")
-            team2_name_vars[i].set("")
-            team2_equipment_id_vars[i].set("")
+    for i in range(num_players):
+        tk.Label(red_team_frame, text=f"{i+1}", bg="#500000", fg="white", width=2, anchor="e").grid(row=i+1, column=0, sticky="e")
+        tk.Checkbutton(red_team_frame, bg="#500000").grid(row=i+1, column=1, sticky="e")
+        tk.Entry(red_team_frame, width=20).grid(row=i+1, column=2, padx=5)
 
-    tk.Label(root, text="Team 1", font=("Arial", 16)).grid(row=0, column=0, columnspan=4)
+        tk.Label(green_team_frame, text=f"{i+1}", bg="#004d00", fg="white", width=2, anchor="e").grid(row=i+1, column=0, sticky="e")
+        tk.Checkbutton(green_team_frame, bg="#004d00").grid(row=i+1, column=1, sticky="e")
+        tk.Entry(green_team_frame, width=20).grid(row=i+1, column=2, padx=5)
 
-    for i in range(num_players_per_team):
-        player_name_var = tk.StringVar()
-        equipment_id_var = tk.StringVar()
+    # Game mode label at the bottom
+    game_mode_label = tk.Label(root, text="Game Mode: Standard public mode", font=("Arial", 12), bg="black", fg="white")
+    game_mode_label.grid(row=1, column=0, columnspan=2)
 
-        team1_name_vars.append(player_name_var)
-        team1_equipment_id_vars.append(equipment_id_var)
+    # Control buttons
+    button_frame = tk.Frame(root, bg="black")
+    button_frame.grid(row=2, column=0, columnspan=2, pady=10)
 
-        tk.Label(root, text=f"Player {i+1} Name:").grid(row=i+1, column=0, sticky="e")
-        tk.Entry(root, textvariable=player_name_var).grid(row=i+1, column=1)
+    button_texts = ["F1 Edit Game", "F2 Game Parameters", "F3 Start Game", "F5 Preferred Games", 
+                    "F7 View Game", "F8 View Game", "F10 Flick Sync", "F12 Clear Game"]
 
-        tk.Label(root, text=f"Equipment ID:").grid(row=i+1, column=2, sticky="e")
-        tk.Entry(root, textvariable=equipment_id_var).grid(row=i+1, column=3)
+    for i, text in enumerate(button_texts):
+        tk.Button(button_frame, text=text, width=15, font=("Arial", 10), bg="black", fg="green").grid(row=0, column=i, padx=5, pady=5)
 
-    tk.Label(root, text="Team 2", font=("Arial", 16)).grid(row=0, column=4, columnspan=4)
-
-    for i in range(num_players_per_team):
-        player_name_var = tk.StringVar()
-        equipment_id_var = tk.StringVar()
-
-        team2_name_vars.append(player_name_var)
-        team2_equipment_id_vars.append(equipment_id_var)
-
-        tk.Label(root, text=f"Player {i+1} Name:").grid(row=i+1, column=4, sticky="e")
-        tk.Entry(root, textvariable=player_name_var).grid(row=i+1, column=5)
-
-        tk.Label(root, text=f"Equipment ID:").grid(row=i+1, column=6, sticky="e")
-        tk.Entry(root, textvariable=equipment_id_var).grid(row=i+1, column=7)
-
-    tk.Button(root, text="Submit Player Data", command=retrieve_player_data).grid(row=num_players_per_team+1, column=0, columnspan=4)
-    tk.Button(root, text="Clear Entries", command=clear_entries).grid(row=num_players_per_team+1, column=4, columnspan=4)
-
-    root.bind('<F5>', start_game)
-    root.bind('<F12>', clear_entries)
+    # Instruction label
+    instructions = tk.Label(root, text="<Del> to Delete Player, <Ins> to Manually Insert, or edit codename", font=("Arial", 10), bg="black", fg="white")
+    instructions.grid(row=3, column=0, columnspan=2)
 
     root.mainloop()
 
-
-# Splash screen
-splash_root = tk.Tk()
-splash_root.overrideredirect(True)
-splash_root.geometry("1200x600+100+50")
-
-splash_image = Image.open("assets/splash_image.png")
-splash_image = splash_image.resize((1200, 600), Image.Resampling.LANCZOS)
-splash_photo = ImageTk.PhotoImage(splash_image)
-
-splash_label = tk.Label(splash_root, image=splash_photo)
-splash_label.pack()
-
-def show_main_screen():
-    splash_root.destroy()
-    main_screen()
-
-splash_root.after(3000, show_main_screen)  # Display for 3 seconds
-splash_root.mainloop()
+# Display the splash screen
+show_splash_screen()
