@@ -1,8 +1,8 @@
 import psycopg2
 
 DB_NAME = "photon"
-DB_USER = "holderUser"  
-DB_PASSWORD = "holderPass"  
+DB_USER = "grparish@uark.edu"  
+DB_PASSWORD = "password"  
 DB_HOST = "localhost" 
 DB_PORT = "5432"  
 
