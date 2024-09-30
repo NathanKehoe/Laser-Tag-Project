@@ -1,5 +1,7 @@
 import tkinter as tk
 from PIL import Image, ImageTk
+import threading
+import socket
 
 # Splash screen function
 def show_splash_screen():
@@ -25,7 +27,7 @@ def show_splash_screen():
 def main_screen():
     root = tk.Tk()
     root.title("Entry Terminal")
-    root.geometry("1200x600")
+    root.geometry("1200x700")
     root.configure(bg="black")
 
     # Creating frames for Red Team and Green Team
@@ -71,5 +73,30 @@ def main_screen():
 
     root.mainloop()
 
-# Display the splash screen
-show_splash_screen()
+# Server function
+def server():
+    # Create a UDP socket
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    server_socket.bind(('127.0.0.1', 7501))
+    print("Server is listening on port 7501...")
+
+    while True:
+        data, addr = server_socket.recvfrom(1024)  # Buffer size is 1024 bytes
+        print(f"Received from {addr}: {data.decode()}")
+        
+        # Optionally send a response back to the client
+        response = f"Received: {data.decode()}"
+        server_socket.sendto(response.encode(), addr)
+
+# Function to start the server in a separate thread
+def start_server():
+    server_thread = threading.Thread(target=server)
+    server_thread.daemon = True  # Daemonize the thread to exit when the main program exits
+    server_thread.start()
+
+if __name__ == "__main__":
+    # Start the server thread
+    start_server()
+
+    # Show the splash screen, which will eventually lead to the main screen
+    show_splash_screen()
