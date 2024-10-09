@@ -1,7 +1,103 @@
 import tkinter as tk
+from tkinter import messagebox, simpledialog
 from PIL import Image, ImageTk
 import threading
 import socket
+import psycopg2
+
+DB_NAME = "photon"
+DB_USER = "gmslaugh@uark.edu"  
+DB_PASSWORD = "password"  
+DB_HOST = "localhost" 
+DB_PORT = "5432"  
+
+def connect():
+    try:
+        conn = psycopg2.connect(
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            host=DB_HOST,
+            port=DB_PORT
+        )
+        print(f"connecting")
+        return conn
+    except psycopg2.Error as e:
+        print(f"Error connecting to database: {e}")
+        return None
+    
+def check_for_player(player_id):
+    conn = connect()
+    if conn is None:
+        return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT codename FROM players WHERE id = %s;", (player_id,))
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if result:
+            return result[0]  # Return the codename if found
+        else:
+            return False  # Return False if not found
+    except psycopg2.Error as e:
+        print(f"Error querying the database: {e}")
+        return False
+
+# Add a new player to the database
+def add_player(player_id, codename):
+    conn = connect()
+    if conn is None:
+        return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO players (id, codename) VALUES (%s, %s);", (player_id, codename))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True  # Player added successfully
+    except psycopg2.Error as e:
+        print(f"Error inserting into the database: {e}")
+        return False
+
+# Remove a player from the database
+def remove_player(player_id):
+    conn = connect()
+    if conn is None:
+        return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM players WHERE id = %s;", (player_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True  # Player removed successfully
+    except psycopg2.Error as e:
+        print(f"Error deleting from the database: {e}")
+        return False
+
+# Function to handle when a player ID is entered
+def on_player_id_enter(event, player_id_entry, codename_entry):
+    player_id = player_id_entry.get().strip()
+
+    if player_id:
+        # Check if player exists
+        codename = check_for_player(player_id)
+        if codename:
+            codename_entry.delete(0, tk.END)
+            codename_entry.insert(0, codename)
+        else:
+            # Prompt to add the player if not found
+            add_new = messagebox.askyesno("Player Not Found", "Player ID not found. Would you like to add a new player?")
+            if add_new:
+                new_codename = simpledialog.askstring("New Player", "Enter codename for new player:")
+                if new_codename:
+                    add_player(player_id, new_codename)
+                    codename_entry.delete(0, tk.END)
+                    codename_entry.insert(0, new_codename)
+
+
+
 
 # Splash screen function
 def show_splash_screen():
@@ -31,6 +127,22 @@ def main_screen():
     root.configure(bg="black")
 
     # Creating frames for Red Team and Green Team
+    red_team_players = []
+    green_team_players = []
+
+    # Function to save player data
+    def save_player_data(team, player_id_entry, name_entry, player_array):
+        player_id = player_id_entry.get().strip()
+        player_name = name_entry.get().strip()
+
+        if player_id and player_name:
+            player_data = {'id': player_id, 'name': player_name}
+            player_array.append(player_data)
+            print(f"Player added to {team}: {player_data}")
+        else:
+            messagebox.showerror("Input Error", "Both fields (ID and Name) must be filled!")
+
+    # Creating frames for Red Team and Green Team
     red_team_frame = tk.Frame(root, bg="#500000", bd=2, relief="ridge", width=580, height=480)
     red_team_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
@@ -45,13 +157,30 @@ def main_screen():
     num_players = 18
 
     for i in range(num_players):
+        # Red Team
         tk.Label(red_team_frame, text=f"{i+1}", bg="#500000", fg="white", width=2, anchor="e").grid(row=i+1, column=0, sticky="e")
-        tk.Checkbutton(red_team_frame, bg="#500000").grid(row=i+1, column=1, sticky="e")
-        tk.Entry(red_team_frame, width=20).grid(row=i+1, column=2, padx=5)
+        red_player_id_entry = tk.Entry(red_team_frame, width=10)
+        red_player_id_entry.grid(row=i+1, column=1, padx=5)
 
+        red_name_entry = tk.Entry(red_team_frame, width=15)
+        red_name_entry.grid(row=i+1, column=2, padx=5)
+
+        tk.Button(red_team_frame, text="Save", bg="gray", fg="black", 
+                  command=lambda red_player_id_entry=red_player_id_entry, red_name_entry=red_name_entry:
+                  save_player_data("Red Team", red_player_id_entry, red_name_entry, red_team_players)).grid(row=i+1, column=3, padx=5)
+
+        # Green Team
         tk.Label(green_team_frame, text=f"{i+1}", bg="#004d00", fg="white", width=2, anchor="e").grid(row=i+1, column=0, sticky="e")
-        tk.Checkbutton(green_team_frame, bg="#004d00").grid(row=i+1, column=1, sticky="e")
-        tk.Entry(green_team_frame, width=20).grid(row=i+1, column=2, padx=5)
+        green_player_id_entry = tk.Entry(green_team_frame, width=10)
+        green_player_id_entry.grid(row=i+1, column=1, padx=5)
+
+        green_name_entry = tk.Entry(green_team_frame, width=15)
+        green_name_entry.grid(row=i+1, column=2, padx=5)
+
+        tk.Button(green_team_frame, text="Save", bg="gray", fg="black", 
+                  command=lambda green_player_id_entry=green_player_id_entry, green_name_entry=green_name_entry:
+                  save_player_data("Green Team", green_player_id_entry, green_name_entry, green_team_players)).grid(row=i+1, column=3, padx=5)
+
 
     # Game mode label at the bottom
     game_mode_label = tk.Label(root, text="Game Mode: Standard public mode", font=("Arial", 12), bg="black", fg="white")
@@ -97,6 +226,7 @@ def start_server():
 if __name__ == "__main__":
     # Start the server thread
     start_server()
+    connect()
 
     # Show the splash screen, which will eventually lead to the main screen
     show_splash_screen()
