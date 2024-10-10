@@ -149,11 +149,12 @@ def main_screen():
         elif player_id:
             player_data = {'id': player_id}
             player_name = check_for_player(player_id)
-            if (player_name == True or player_name == False):
+            if (player_name == False):
                 print("Player not found under ID, " + str(player_id))
             else:
                 print("Here is the name of the player for ID " + str(player_id) + ", " + str(player_name))
                 player_data = {'id': player_id, 'name': player_name}
+                
                 equipment_id = simpledialog.askstring('equipment_id', 'What is the equipment ID for the entered player?')
                 broadcast_socket.sendto(equipment_id.encode(), broadcast_address)
         else:
