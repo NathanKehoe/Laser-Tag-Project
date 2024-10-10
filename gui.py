@@ -6,10 +6,15 @@ import socket
 import psycopg2
 
 DB_NAME = "photon"
-DB_USER = "gmslaugh@uark.edu"  
+DB_USER = "postgres"  
 DB_PASSWORD = "password"  
 DB_HOST = "localhost" 
 DB_PORT = "5432"  
+
+broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+broadcast_address = '255.255.255.255'
+broadcast_port = 7500
 
 def connect():
     try:
@@ -96,6 +101,8 @@ def on_player_id_enter(event, player_id_entry, codename_entry):
                     codename_entry.delete(0, tk.END)
                     codename_entry.insert(0, new_codename)
 
+#def ask_for_equipment():
+
 
 
 
@@ -139,6 +146,16 @@ def main_screen():
             player_data = {'id': player_id, 'name': player_name}
             player_array.append(player_data)
             print(f"Player added to {team}: {player_data}")
+        elif player_id:
+            player_data = {'id': player_id}
+            player_name = check_for_player(player_id)
+            if (player_name == True or player_name == False):
+                print("Player not found under ID, " + str(player_id))
+            else:
+                print("Here is the name of the player for ID " + str(player_id) + ", " + str(player_name))
+                player_data = {'id': player_id, 'name': player_name}
+                equipment_id = simpledialog.askstring('equipment_id', 'What is the equipment ID for the entered player?')
+                broadcast_socket.sendto(equipment_id.encode(), broadcast_address)
         else:
             messagebox.showerror("Input Error", "Both fields (ID and Name) must be filled!")
 
@@ -207,6 +224,9 @@ def server():
     # Create a UDP socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_socket.bind(('127.0.0.1', 7501))
+    
+    
+
     print("Server is listening on port 7501...")
 
     while True:
@@ -227,6 +247,5 @@ if __name__ == "__main__":
     # Start the server thread
     start_server()
     connect()
-
     # Show the splash screen, which will eventually lead to the main screen
     show_splash_screen()
