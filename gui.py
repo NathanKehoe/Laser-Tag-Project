@@ -150,6 +150,10 @@ def main_screen():
     green_team_id_entries = []
     green_team_name_entries = []
 
+    def print_players():
+        print(f"Red Team Players: {red_team_players}")
+        print(f"Green Team Players: {green_team_players}")
+
     def start_game():
         root.withdraw()
         third_screen()
@@ -226,13 +230,15 @@ def main_screen():
         # Function to display team names
         def display_team_names():
             # Display names for Team A
-            for name in red_team_players:
+            for player in red_team_players:
+                name = player['name']
                 label = tk.Label(frame_a, text=name, bg="#500000", font=("Arial", 16))
                 label.pack(pady=5)
 
             # Display names for Team B
-            for name in green_team_players:
-                label = tk.Label(frame_b, text=name, bg="#004d00", font=("Arial", 16))
+            for player in green_team_players:
+                name = player['name']
+                label = tk.Label(frame_b, text=name, bg="#000000", font=("Arial", 16))
                 label.pack(pady=5)
 
         # Call the function to display names
@@ -264,6 +270,7 @@ def main_screen():
             else:
                 print("Here is the name of the player for ID " + str(player_id) + ", " + str(player_name))
                 player_data = {'id': player_id, 'name': player_name}
+                player_array.append(player_data)
                 name_entry.delete(0, tk.END)
                 name_entry.insert(0, player_name)
 
@@ -303,7 +310,7 @@ def main_screen():
 
         tk.Button(red_team_frame, text="Save", bg="gray", fg="black",
                   command=lambda red_player_id_entry=red_player_id_entry, red_name_entry=red_name_entry:
-                  save_player_data("Red Team", red_player_id_entry, red_name_entry, red_team_players)).grid(row=i+1, column=3, padx=5)
+                  save_player_data('Red', red_player_id_entry, red_name_entry, red_team_players)).grid(row=i+1, column=3, padx=5)
 
         # Green Team
         tk.Label(green_team_frame, text=f"{i+1}", bg="#004d00", fg="white", width=2, anchor="e").grid(row=i+1, column=0, sticky="e")
@@ -317,7 +324,7 @@ def main_screen():
 
         tk.Button(green_team_frame, text="Save", bg="gray", fg="black",
                   command=lambda green_player_id_entry=green_player_id_entry, green_name_entry=green_name_entry:
-                  save_player_data("Green Team", green_player_id_entry, green_name_entry, green_team_players)).grid(row=i+1, column=3, padx=5)
+                  save_player_data('Green', green_player_id_entry, green_name_entry, green_team_players)).grid(row=i+1, column=3, padx=5)
 
     # Game mode label at the bottom
     game_mode_label = tk.Label(root, text="Game Mode: Standard public mode", font=("Arial", 12), bg="black", fg="white")
@@ -346,7 +353,7 @@ def main_screen():
 
     # Define button texts and commands
     button_texts = [
-        ("F1 Edit Game", lambda: print("Edit Game function to be implemented")),  # Placeholder function
+        ("F1 Print Players", print_players),  # Placeholder function
         ("F2 Game Parameters", lambda: print("Game Parameters function to be implemented")),  # Placeholder function
         ("F3 Start Game", start_game),  # Call start_game function
         ("F5 Preferred Games", lambda: print("Preferred Games function to be implemented")),  # Placeholder function
@@ -363,6 +370,8 @@ def main_screen():
     # Instruction label
     instructions = tk.Label(root, text="Use F1, F2, F3, etc. to navigate", font=("Arial", 10), bg="black", fg="white")
     instructions.grid(row=3, column=0, columnspan=2)
+
+    
 
     root.mainloop()
 
