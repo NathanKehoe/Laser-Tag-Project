@@ -4,6 +4,7 @@ from PIL import Image, ImageTk
 import threading
 import socket
 import psycopg2
+import os
 
 DB_NAME = "postgres"
 DB_USER = "postgres"  
@@ -143,53 +144,102 @@ def main_screen():
     red_team_players = []
     green_team_players = []
 
+    # Lists to hold references to Entry widgets
+    red_team_id_entries = []
+    red_team_name_entries = []
+    green_team_id_entries = []
+    green_team_name_entries = []
+
     def start_game():
         root.withdraw()
         third_screen()
     
     def third_screen():
-    # Create a new window (Toplevel)
+        # Create a new window (Toplevel)
         third_root = tk.Toplevel(root)
         third_root.title('Player Action Screen')
         third_root.geometry("1200x700")
         third_root.configure(bg="black")
 
-    # Welcome label
-        tk.Label(third_root, text="Welcome to the Third Screen", font=("Arial", 24), bg="lightgray").pack(pady=20)
-
-    # Function to return to the main screen
+        # Function to return to the main screen
         def return_to_main():
             third_root.destroy()
             root.deiconify()
 
-    # Back button
-        tk.Button(third_root, text="Back to Main Screen", command=return_to_main).pack(pady=20)
+        # Back button
+        tk.Button(third_root, text="Back to Main Screen", command=return_to_main).pack(pady=10)
 
-    # Create frames for each team
-        frame_a = tk.Frame(third_root, bg="#500000")
-        frame_a.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # Create a frame to hold the countdown image
+        countdown_frame = tk.Frame(third_root, bg="black")
+        countdown_frame.pack(side=tk.TOP, fill=tk.X)
 
-        frame_b = tk.Frame(third_root, bg="#004d00")
-        frame_b.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        # Create a label to display the countdown images
+        countdown_label = tk.Label(countdown_frame, bg="black")
+        countdown_label.pack(pady=10)
 
-    # Function to display team names
+        # Get the absolute path to the script directory
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # Path to the countdown images
+        countdown_images_path = os.path.join(script_dir, 'assets', 'countdown_images')
+
+        # Function to start the countdown
+        def start_countdown(count=31):
+            if count > 0:
+                # Load the image corresponding to the current count
+                image_filename = f"{count-1}.png"  # Images are named 0.png to 29.png
+                image_path = os.path.join(countdown_images_path, image_filename)
+                try:
+                    img = Image.open(image_path)
+                    img = img.resize((200, 100), Image.LANCZOS)  # Resize image to a smaller size
+                    photo = ImageTk.PhotoImage(img)
+                    countdown_label.config(image=photo)
+                    countdown_label.image = photo  # Keep a reference
+                except Exception as e:
+                    print(f"Error loading image {image_path}: {e}")
+
+                # Schedule the next update after 1 second (1000 milliseconds)
+                third_root.after(1000, start_countdown, count-1)
+            else:
+                # Countdown finished
+                print("Countdown completed!")
+
+        # Start the countdown
+        start_countdown()
+
+        # Create frames for each team below the countdown
+        teams_frame = tk.Frame(third_root, bg="black")
+        teams_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        # Frame for Red Team
+        frame_a = tk.Frame(teams_frame, bg="#500000", bd=2, relief="ridge")
+        frame_a.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Frame for Green Team
+        frame_b = tk.Frame(teams_frame, bg="#004d00", bd=2, relief="ridge")
+        frame_b.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Team Labels
+        tk.Label(frame_a, text="RED TEAM", font=("Arial", 14, "bold"), bg="#500000", fg="white").pack(pady=5)
+        tk.Label(frame_b, text="GREEN TEAM", font=("Arial", 14, "bold"), bg="#004d00", fg="white").pack(pady=5)
+
+        # Function to display team names
         def display_team_names():
-        # Display names for Team A
+            # Display names for Team A
             for name in red_team_players:
                 label = tk.Label(frame_a, text=name, bg="#500000", font=("Arial", 16))
                 label.pack(pady=5)
 
-        # Display names for Team B
+            # Display names for Team B
             for name in green_team_players:
                 label = tk.Label(frame_b, text=name, bg="#004d00", font=("Arial", 16))
                 label.pack(pady=5)
 
-    # Call the function to display names
+        # Call the function to display names
         display_team_names()
 
-    # Start the main loop for the third_root window
+        # Start the main loop for the third_root window
         third_root.mainloop()
-
 
     # Function to save player data
     def save_player_data(team, player_id_entry, name_entry, player_array):
@@ -245,9 +295,11 @@ def main_screen():
         tk.Label(red_team_frame, text=f"{i+1}", bg="#500000", fg="white", width=2, anchor="e").grid(row=i+1, column=0, sticky="e")
         red_player_id_entry = tk.Entry(red_team_frame, width=10)
         red_player_id_entry.grid(row=i+1, column=1, padx=5)
+        red_team_id_entries.append(red_player_id_entry)  # Store reference
 
         red_name_entry = tk.Entry(red_team_frame, width=15)
         red_name_entry.grid(row=i+1, column=2, padx=5)
+        red_team_name_entries.append(red_name_entry)  # Store reference
 
         tk.Button(red_team_frame, text="Save", bg="gray", fg="black",
                   command=lambda red_player_id_entry=red_player_id_entry, red_name_entry=red_name_entry:
@@ -257,9 +309,11 @@ def main_screen():
         tk.Label(green_team_frame, text=f"{i+1}", bg="#004d00", fg="white", width=2, anchor="e").grid(row=i+1, column=0, sticky="e")
         green_player_id_entry = tk.Entry(green_team_frame, width=10)
         green_player_id_entry.grid(row=i+1, column=1, padx=5)
+        green_team_id_entries.append(green_player_id_entry)  # Store reference
 
         green_name_entry = tk.Entry(green_team_frame, width=15)
         green_name_entry.grid(row=i+1, column=2, padx=5)
+        green_team_name_entries.append(green_name_entry)  # Store reference
 
         tk.Button(green_team_frame, text="Save", bg="gray", fg="black",
                   command=lambda green_player_id_entry=green_player_id_entry, green_name_entry=green_name_entry:
@@ -273,6 +327,23 @@ def main_screen():
     button_frame = tk.Frame(root, bg="black")
     button_frame.grid(row=2, column=0, columnspan=2, pady=10)
 
+    # Function to clear all player data
+    def clear_all_player_data():
+        # Clear Entry fields for Red Team
+        for entry in red_team_id_entries + red_team_name_entries:
+            entry.delete(0, tk.END)
+        # Clear Entry fields for Green Team
+        for entry in green_team_id_entries + green_team_name_entries:
+            entry.delete(0, tk.END)
+        # Clear the player data lists
+        red_team_players.clear()
+        green_team_players.clear()
+        print("All player entries have been cleared from the lists.")
+
+        # Print the lists to confirm they are empty
+        print(f"Red Team Players: {red_team_players}")
+        print(f"Green Team Players: {green_team_players}")
+
     # Define button texts and commands
     button_texts = [
         ("F1 Edit Game", lambda: print("Edit Game function to be implemented")),  # Placeholder function
@@ -282,7 +353,7 @@ def main_screen():
         ("F7 View Game", lambda: print("View Game function to be implemented")),  # Placeholder function
         ("F8 View Game", lambda: print("View Game function to be implemented")),  # Placeholder function
         ("F10 Flick Sync", lambda: print("Flick Sync function to be implemented")),  # Placeholder function
-        ("F12 Clear Game", lambda: print("Clear Game function to be implemented")),  # Placeholder function
+        ("F12 Clear Game", clear_all_player_data),  # Bind to the clear_all_player_data function
     ]
 
     # Creating buttons with customized properties
@@ -294,6 +365,9 @@ def main_screen():
     instructions.grid(row=3, column=0, columnspan=2)
 
     root.mainloop()
+
+    
+
 
 
 
