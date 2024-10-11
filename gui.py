@@ -5,7 +5,7 @@ import threading
 import socket
 import psycopg2
 
-DB_NAME = "photon"
+DB_NAME = "postgres"
 DB_USER = "postgres"  
 DB_PASSWORD = "password"  
 DB_HOST = "localhost" 
@@ -25,7 +25,6 @@ def connect():
             host=DB_HOST,
             port=DB_PORT
         )
-        print(f"connecting")
         return conn
     except psycopg2.Error as e:
         print(f"Error connecting to database: {e}")
@@ -128,14 +127,69 @@ def show_splash_screen():
 
 # Main screen function
 def main_screen():
+    global root
+    if 'root' in globals() and root.winfo_exists():
+        root.deiconify()
+        return
     root = tk.Tk()
     root.title("Entry Terminal")
     root.geometry("1200x700")
     root.configure(bg="black")
 
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
     # Creating frames for Red Team and Green Team
     red_team_players = []
     green_team_players = []
+
+    def start_game():
+        root.withdraw()
+        third_screen()
+    
+    def third_screen():
+    # Create a new window (Toplevel)
+        third_root = tk.Toplevel(root)
+        third_root.title('Player Action Screen')
+        third_root.geometry("1200x700")
+        third_root.configure(bg="black")
+
+    # Welcome label
+        tk.Label(third_root, text="Welcome to the Third Screen", font=("Arial", 24), bg="lightgray").pack(pady=20)
+
+    # Function to return to the main screen
+        def return_to_main():
+            third_root.destroy()
+            root.deiconify()
+
+    # Back button
+        tk.Button(third_root, text="Back to Main Screen", command=return_to_main).pack(pady=20)
+
+    # Create frames for each team
+        frame_a = tk.Frame(third_root, bg="#500000")
+        frame_a.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        frame_b = tk.Frame(third_root, bg="#004d00")
+        frame_b.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+    # Function to display team names
+        def display_team_names():
+        # Display names for Team A
+            for name in red_team_players:
+                label = tk.Label(frame_a, text=name, bg="#500000", font=("Arial", 16))
+                label.pack(pady=5)
+
+        # Display names for Team B
+            for name in green_team_players:
+                label = tk.Label(frame_b, text=name, bg="#004d00", font=("Arial", 16))
+                label.pack(pady=5)
+
+    # Call the function to display names
+        display_team_names()
+
+    # Start the main loop for the third_root window
+        third_root.mainloop()
+
 
     # Function to save player data
     def save_player_data(team, player_id_entry, name_entry, player_array):
@@ -149,14 +203,26 @@ def main_screen():
         elif player_id:
             player_data = {'id': player_id}
             player_name = check_for_player(player_id)
-            if (player_name == False):
+            if not player_name:
                 print("Player not found under ID, " + str(player_id))
+                player_name = simpledialog.askstring('player_name', 'What would you like your Player Name?')
+                if player_name:
+                    player_data = {'id': player_id, 'name': player_name}
+                    player_array.append(player_data)
+                    name_entry.delete(0, tk.END)
+                    name_entry.insert(0, player_name)
             else:
                 print("Here is the name of the player for ID " + str(player_id) + ", " + str(player_name))
                 player_data = {'id': player_id, 'name': player_name}
-                
+                name_entry.delete(0, tk.END)
+                name_entry.insert(0, player_name)
+
                 equipment_id = simpledialog.askstring('equipment_id', 'What is the equipment ID for the entered player?')
-                broadcast_socket.sendto(equipment_id.encode(), broadcast_address)
+                if equipment_id:  # Check if an equipment ID was provided
+                    sock.sendto(equipment_id.encode('utf-8'), ('<broadcast>', 7501))
+                    print(f"Broadcasting equipment ID: {equipment_id}")
+                else:
+                    print("No equipment ID provided; broadcasting skipped.")
         else:
             messagebox.showerror("Input Error", "Both fields (ID and Name) must be filled!")
 
@@ -183,7 +249,7 @@ def main_screen():
         red_name_entry = tk.Entry(red_team_frame, width=15)
         red_name_entry.grid(row=i+1, column=2, padx=5)
 
-        tk.Button(red_team_frame, text="Save", bg="gray", fg="black", 
+        tk.Button(red_team_frame, text="Save", bg="gray", fg="black",
                   command=lambda red_player_id_entry=red_player_id_entry, red_name_entry=red_name_entry:
                   save_player_data("Red Team", red_player_id_entry, red_name_entry, red_team_players)).grid(row=i+1, column=3, padx=5)
 
@@ -195,10 +261,9 @@ def main_screen():
         green_name_entry = tk.Entry(green_team_frame, width=15)
         green_name_entry.grid(row=i+1, column=2, padx=5)
 
-        tk.Button(green_team_frame, text="Save", bg="gray", fg="black", 
+        tk.Button(green_team_frame, text="Save", bg="gray", fg="black",
                   command=lambda green_player_id_entry=green_player_id_entry, green_name_entry=green_name_entry:
                   save_player_data("Green Team", green_player_id_entry, green_name_entry, green_team_players)).grid(row=i+1, column=3, padx=5)
-
 
     # Game mode label at the bottom
     game_mode_label = tk.Label(root, text="Game Mode: Standard public mode", font=("Arial", 12), bg="black", fg="white")
@@ -208,17 +273,31 @@ def main_screen():
     button_frame = tk.Frame(root, bg="black")
     button_frame.grid(row=2, column=0, columnspan=2, pady=10)
 
-    button_texts = ["F1 Edit Game", "F2 Game Parameters", "F3 Start Game", "F5 Preferred Games", 
-                    "F7 View Game", "F8 View Game", "F10 Flick Sync", "F12 Clear Game"]
+    # Define button texts and commands
+    button_texts = [
+        ("F1 Edit Game", lambda: print("Edit Game function to be implemented")),  # Placeholder function
+        ("F2 Game Parameters", lambda: print("Game Parameters function to be implemented")),  # Placeholder function
+        ("F3 Start Game", start_game),  # Call start_game function
+        ("F5 Preferred Games", lambda: print("Preferred Games function to be implemented")),  # Placeholder function
+        ("F7 View Game", lambda: print("View Game function to be implemented")),  # Placeholder function
+        ("F8 View Game", lambda: print("View Game function to be implemented")),  # Placeholder function
+        ("F10 Flick Sync", lambda: print("Flick Sync function to be implemented")),  # Placeholder function
+        ("F12 Clear Game", lambda: print("Clear Game function to be implemented")),  # Placeholder function
+    ]
 
-    for i, text in enumerate(button_texts):
-        tk.Button(button_frame, text=text, width=15, font=("Arial", 10), bg="black", fg="green").grid(row=0, column=i, padx=5, pady=5)
+    # Creating buttons with customized properties
+    for i, (text, command) in enumerate(button_texts):
+        tk.Button(button_frame, text=text, width=15, font=("Arial", 10), bg="black", fg="green", command=command).grid(row=0, column=i, padx=5, pady=5)
 
     # Instruction label
-    instructions = tk.Label(root, text="<Del> to Delete Player, <Ins> to Manually Insert, or edit codename", font=("Arial", 10), bg="black", fg="white")
+    instructions = tk.Label(root, text="Use F1, F2, F3, etc. to navigate", font=("Arial", 10), bg="black", fg="white")
     instructions.grid(row=3, column=0, columnspan=2)
 
     root.mainloop()
+
+
+
+
 
 # Server function
 def server():
@@ -244,9 +323,26 @@ def start_server():
     server_thread.daemon = True  # Daemonize the thread to exit when the main program exits
     server_thread.start()
 
+def listen_for_broadcasts():
+    listen_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    listen_socket.bind(('', 7501))  # Bind to all interfaces on port 7501
+
+    print("Listening for broadcasts on port 7501...")
+
+    while True:
+        data, addr = listen_socket.recvfrom(1024)  # Buffer size is 1024 bytes
+        print(f"Received broadcast from {addr}: {data.decode('utf-8')}")
+
+# Function to start the broadcast listener in a separate thread
+def start_broadcast_listener():
+    listener_thread = threading.Thread(target=listen_for_broadcasts)
+    listener_thread.daemon = True  # Daemonize the thread
+    listener_thread.start()
+
 if __name__ == "__main__":
     # Start the server thread
     start_server()
+    start_broadcast_listener()
     connect()
     # Show the splash screen, which will eventually lead to the main screen
     show_splash_screen()
