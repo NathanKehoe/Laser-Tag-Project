@@ -36,15 +36,14 @@ def check_for_player(player_id):
     if conn is None:
         return False
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT codename FROM players WHERE id = %s;", (player_id,))
-        result = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        if result:
-            return result[0]  # Return the codename if found
-        else:
-            return False  # Return False if not found
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT codename FROM players WHERE id = %s;", (player_id,))
+                result = cursor.fetchone()
+                if result:
+                    return result[0]  # Return the codename if found
+                else:
+                    return False  # Return False if not found
     except psycopg2.Error as e:
         print(f"Error querying the database: {e}")
         return False
@@ -55,11 +54,9 @@ def add_player(player_id, codename):
     if conn is None:
         return False
     try:
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO players (id, codename) VALUES (%s, %s);", (player_id, codename))
-        conn.commit()
-        cursor.close()
-        conn.close()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("INSERT INTO players (id, codename) VALUES (%s, %s);", (player_id, codename))
         return True  # Player added successfully
     except psycopg2.Error as e:
         print(f"Error inserting into the database: {e}")
@@ -71,11 +68,9 @@ def remove_player(player_id):
     if conn is None:
         return False
     try:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM players WHERE id = %s;", (player_id,))
-        conn.commit()
-        cursor.close()
-        conn.close()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM players WHERE id = %s;", (player_id,))
         return True  # Player removed successfully
     except psycopg2.Error as e:
         print(f"Error deleting from the database: {e}")
@@ -261,7 +256,7 @@ def main_screen():
             player_name = check_for_player(player_id)
             if not player_name:
                 print("Player not found under ID, " + str(player_id))
-                player_name = simpledialog.askstring('player_name', 'What would you like your Player Name?')
+                player_name = simpledialog.askstring('player_name', 'What would you like your Player Name to be?')
                 if player_name:
                     player_data = {'id': player_id, 'name': player_name}
                     player_array.append(player_data)
@@ -389,7 +384,7 @@ def server():
     server_socket.bind(('127.0.0.1', 7501))
     
     
-
+    # DEBUG: print to terminal
     print("Server is listening on port 7501...")
 
     while True:
