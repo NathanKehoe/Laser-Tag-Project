@@ -6,7 +6,7 @@ import socket
 import psycopg2
 import os
 
-DB_NAME = "postgres"
+DB_NAME = "photon"
 DB_USER = "postgres"  
 DB_PASSWORD = "password"  
 DB_HOST = "localhost" 
@@ -246,7 +246,7 @@ def main_screen():
             # Display names for Team B
             for player in green_team_players:
                 name = player['name']
-                label = tk.Label(frame_b, text=name, bg="#000000", font=("Arial", 16))
+                label = tk.Label(frame_b, text=name, bg="#004d00", font=("Arial", 16))
                 label.pack(pady=5)
 
         # Call the function to display names
