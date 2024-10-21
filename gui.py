@@ -371,10 +371,18 @@ def main_screen():
         ("F12 Clear Game", clear_all_player_data),  # Bind to the clear_all_player_data function
     ]
 
-    def bind_keys(root, button_texts):
-        for i, (text, command) in enumerate(button_texts):
-            key = f'<F{i+1}>'  # Map to F1, F2, F3, etc.
+    def bind_keys(root, key_command_pairs):
+        for key, command in key_command_pairs:
             root.bind(key, lambda event, cmd=command: cmd())
+        
+
+    key_command_pairs = [
+    ('<F1>', print_players),
+    ('<F3>', start_game),
+    ('<F12>', clear_all_player_data),
+]
+
+    bind_keys(root, key_command_pairs)
 
     # Creating buttons with customized properties
     for i, (text, command) in enumerate(button_texts):
@@ -384,8 +392,7 @@ def main_screen():
     instructions = tk.Label(root, text="Use F1, F2, F3, etc. to navigate", font=("Arial", 10), bg="black", fg="white")
     instructions.grid(row=3, column=0, columnspan=2)
 
-    bind_keys(root, button_texts)
-
+   
     root.mainloop()
 
     
