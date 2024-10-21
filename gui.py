@@ -206,7 +206,20 @@ def main_screen():
                 third_root.after(1000, start_countdown, count-1)
             else:
                 # Countdown finished
-                print("Countdown completed!")
+                start_gamecountdown()
+        
+        def start_gamecountdown(count = 361):
+                if count > 0:
+                    gamecountdown_label = tk.Label(third_root, font=("Arial", 20))
+                    countdown_label.pack(padx=20, pady=20)
+                    gamecountdown_label.config(text=f"Time Left: {count} seconds")
+                    third_root.after(1000,start_gamecountdown, count-1)
+                else:
+                    gamecountdown_label.config(text=f"Game Over!")
+                    return_to_main()
+
+
+
 
         # Start the countdown
         start_countdown()
@@ -363,6 +376,11 @@ def main_screen():
         ("F12 Clear Game", clear_all_player_data),  # Bind to the clear_all_player_data function
     ]
 
+    def bind_keys(root, button_texts):
+        for i, (text, command) in enumerate(button_texts):
+            key = f'<F{i+1}>'  # Map to F1, F2, F3, etc.
+            root.bind(key, lambda event, cmd=command: cmd())
+
     # Creating buttons with customized properties
     for i, (text, command) in enumerate(button_texts):
         tk.Button(button_frame, text=text, width=15, font=("Arial", 10), bg="black", fg="green", command=command).grid(row=0, column=i, padx=5, pady=5)
@@ -371,7 +389,7 @@ def main_screen():
     instructions = tk.Label(root, text="Use F1, F2, F3, etc. to navigate", font=("Arial", 10), bg="black", fg="white")
     instructions.grid(row=3, column=0, columnspan=2)
 
-    
+    bind_keys(root, button_texts)
 
     root.mainloop()
 
