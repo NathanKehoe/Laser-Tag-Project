@@ -176,47 +176,46 @@ def main_screen():
         countdown_label = tk.Label(countdown_frame, bg="black")
         countdown_label.pack(pady=10)
 
-        # Get the absolute path to the script directory
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-
         # Path to the countdown images
+        script_dir = os.path.dirname(os.path.abspath(__file__))
         countdown_images_path = os.path.join(script_dir, 'assets', 'countdown_images')
 
-        # Function to start the countdown
+        # Function to start the initial countdown
         def start_countdown(count=31):
             if count > 0:
                 # Load the image corresponding to the current count
-                image_filename = f"{count-1}.png"  # Images are named 0.png to 29.png
+                image_filename = f"{count-1}.png"
                 image_path = os.path.join(countdown_images_path, image_filename)
                 try:
                     img = Image.open(image_path)
-                    img = img.resize((200, 100), Image.LANCZOS)  # Resize image to a smaller size
+                    img = img.resize((200, 100), Image.LANCZOS)
                     photo = ImageTk.PhotoImage(img)
                     countdown_label.config(image=photo)
                     countdown_label.image = photo  # Keep a reference
                 except Exception as e:
                     print(f"Error loading image {image_path}: {e}")
 
-                # Schedule the next update after 1 second (1000 milliseconds)
+                # Schedule the next update after 1 second
                 third_root.after(1000, start_countdown, count-1)
             else:
-                # Countdown finished
-                start_gamecountdown()
-        
-        def start_gamecountdown(count = 361):
-                if count > 0:
-                    gamecountdown_label = tk.Label(third_root, font=("Arial", 20))
-                    countdown_label.pack(padx=20, pady=20)
-                    gamecountdown_label.config(text=f"Time Left: {count} seconds")
-                    third_root.after(1000,start_gamecountdown, count-1)
-                else:
-                    gamecountdown_label.config(text=f"Game Over!")
-                    return_to_main()
+                # Countdown finished, start the game timer
+                start_gamecountdown(360)
 
+        # Function to start the 6-minute game timer
+        def start_gamecountdown(count):
+            if count == 360:
+                # First call, create the label
+                third_root.gamecountdown_label = tk.Label(third_root, font=("Arial", 20), bg='black', fg='white')
+                third_root.gamecountdown_label.pack(padx=20, pady=20)
+            if count > 0:
+                minutes, seconds = divmod(count, 60)
+                third_root.gamecountdown_label.config(text=f"Time Left: {minutes:02d}:{seconds:02d}")
+                third_root.after(1000, start_gamecountdown, count-1)
+            else:
+                third_root.gamecountdown_label.config(text="Game Over!")
+                return_to_main()
 
-
-
-        # Start the countdown
+        # Start the initial countdown
         start_countdown()
 
         # Create frames for each team below the countdown
