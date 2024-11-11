@@ -5,114 +5,59 @@ import threading
 import socket
 import psycopg2
 import os
+import logging
+import time
+from database import connect, check_for_player, add_player, remove_player
+from config import DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, BROADCAST_PORT, SERVER_PORT
 
-DB_NAME = "photon"
-DB_USER = "postgres"  
-DB_PASSWORD = "password"  
-DB_HOST = "localhost" 
-DB_PORT = "5432"  
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
-broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-broadcast_address = '255.255.255.255'
-broadcast_port = 7500
+# Define fonts
+LARGE_FONT = ("Arial", 24)
+MEDIUM_FONT = ("Arial", 18)
+SMALL_FONT = ("Arial", 14)
 
-def connect():
-    try:
-        conn = psycopg2.connect(
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            host=DB_HOST,
-            port=DB_PORT
-        )
-        return conn
-    except psycopg2.Error as e:
-        print(f"Error connecting to database: {e}")
-        return None
-    
-def check_for_player(player_id):
-    conn = connect()
-    if conn is None:
-        return False
-    try:
-        with conn:
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT codename FROM players WHERE id = %s;", (player_id,))
-                result = cursor.fetchone()
-                if result:
-                    return result[0]  # Return the codename if found
-                else:
-                    return False  # Return False if not found
-    except psycopg2.Error as e:
-        print(f"Error querying the database: {e}")
-        return False
+# Global variables
+root = None
 
-# Add a new player to the database
-def add_player(player_id, codename):
-    conn = connect()
-    if conn is None:
-        return False
-    try:
-        with conn:
-            with conn.cursor() as cursor:
-                cursor.execute("INSERT INTO players (id, codename) VALUES (%s, %s);", (player_id, codename))
-        return True  # Player added successfully
-    except psycopg2.Error as e:
-        print(f"Error inserting into the database: {e}")
-        return False
-
-# Remove a player from the database
-def remove_player(player_id):
-    conn = connect()
-    if conn is None:
-        return False
-    try:
-        with conn:
-            with conn.cursor() as cursor:
-                cursor.execute("DELETE FROM players WHERE id = %s;", (player_id,))
-        return True  # Player removed successfully
-    except psycopg2.Error as e:
-        print(f"Error deleting from the database: {e}")
-        return False
-
-# Function to handle when a player ID is entered
-def on_player_id_enter(event, player_id_entry, codename_entry):
-    player_id = player_id_entry.get().strip()
-
-    if player_id:
-        # Check if player exists
-        codename = check_for_player(player_id)
-        if codename:
-            codename_entry.delete(0, tk.END)
-            codename_entry.insert(0, codename)
-        else:
-            # Prompt to add the player if not found
-            add_new = messagebox.askyesno("Player Not Found", "Player ID not found. Would you like to add a new player?")
-            if add_new:
-                new_codename = simpledialog.askstring("New Player", "Enter codename for new player:")
-                if new_codename:
-                    add_player(player_id, new_codename)
-                    codename_entry.delete(0, tk.END)
-                    codename_entry.insert(0, new_codename)
-
-#def ask_for_equipment():
+# Maybe move these to another file
+def broadcast_game_start():
+    broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    for i in range(3):  # Broadcast `202` three times
+        logging.info(f"Broadcasting start signal '202', attempt {i + 1}")
+        broadcast_socket.sendto(b'202', ('<broadcast>', BROADCAST_PORT))
+        time.sleep(0.5)  # Short delay between broadcasts
+    broadcast_socket.close()
+    logging.info("Game start signal sent (202)")
 
 
+def broadcast_game_end():
+    broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    for _ in range(3):
+        broadcast_socket.sendto(b'221', ('<broadcast>', BROADCAST_PORT))
+        time.sleep(0.5)
+    broadcast_socket.close()
+    logging.info("Game end signal sent (221)")
 
 
-# Splash screen function
 def show_splash_screen():
     splash_root = tk.Tk()
     splash_root.overrideredirect(True)
-    splash_root.geometry("1200x600+100+50")  # Set the same size as the player entry screen
+    splash_root.geometry("1920x1080+0+0")  # Fullscreen
 
-    splash_image = Image.open("assets/splash_image.png")
-    splash_image = splash_image.resize((1200, 600), Image.Resampling.LANCZOS)  # Adjust image size
-
-    splash_photo = ImageTk.PhotoImage(splash_image)
-    splash_label = tk.Label(splash_root, image=splash_photo)
-    splash_label.pack()
+    try:
+        splash_image = Image.open("assets/splash_image.png")
+        splash_image = splash_image.resize((1920, 1080), Image.LANCZOS)
+        splash_photo = ImageTk.PhotoImage(splash_image)
+        splash_label = tk.Label(splash_root, image=splash_photo)
+        splash_label.pack()
+    except Exception as e:
+        logging.error(f"Error loading splash image: {e}")
+        splash_label = tk.Label(splash_root, text="Welcome to the Game!", font=("Arial", 48))
+        splash_label.pack(pady=200)
 
     def show_main_screen():
         splash_root.destroy()
@@ -121,19 +66,23 @@ def show_splash_screen():
     splash_root.after(3000, show_main_screen)  # Display for 3 seconds
     splash_root.mainloop()
 
-# Main screen function
 def main_screen():
     global root
-    if 'root' in globals() and root.winfo_exists():
+    if 'root' in globals() and root and root.winfo_exists():
         root.deiconify()
         return
     root = tk.Tk()
     root.title("Entry Terminal")
-    root.geometry("1200x700")
+    root.geometry("1920x1080")
     root.configure(bg="black")
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    # Add binding to close the application when Esc is pressed
+    root.bind("<Escape>", lambda event: root.destroy())
+
+    # Configure grid weights
+    root.grid_rowconfigure(0, weight=1)
+    root.grid_columnconfigure(0, weight=1)
+    root.grid_columnconfigure(1, weight=1)
 
     # Creating frames for Red Team and Green Team
     red_team_players = []
@@ -145,306 +94,388 @@ def main_screen():
     green_team_id_entries = []
     green_team_name_entries = []
 
+    # Label for instruction to press Esc to exit
+    esc_instruction_label = tk.Label(root, text="Press Esc to exit the game", font=("Arial", 16), bg="black", fg="white")
+    esc_instruction_label.grid(row=4, column=0, columnspan=2, pady=10)
+
     def print_players():
-        print(f"Red Team Players: {red_team_players}")
-        print(f"Green Team Players: {green_team_players}")
+        logging.info(f"Red Team Players: {red_team_players}")
+        logging.info(f"Green Team Players: {green_team_players}")
 
     def start_game():
         root.withdraw()
+        broadcast_game_start()
         third_screen()
-    
+
     def third_screen():
-        # Create a new window (Toplevel)
         third_root = tk.Toplevel(root)
-        third_root.title('Player Action Screen')
-        third_root.geometry("1200x700")
+        third_root.title("Player Action Screen")
+        third_root.geometry("1920x1080")
         third_root.configure(bg="black")
 
-        # Function to return to the main screen
+        # Configure grid weights for layout structure
+        third_root.grid_columnconfigure(0, weight=1)
+        third_root.grid_columnconfigure(1, weight=2)  # Event area gets more space
+        third_root.grid_columnconfigure(2, weight=1)
+        third_root.grid_rowconfigure(0, weight=1)
+        third_root.grid_rowconfigure(1, weight=0)
+
+        # Back to Entry Screen button
         def return_to_main():
             third_root.destroy()
             root.deiconify()
 
-        # Back button
-        tk.Button(third_root, text="Back to Main Screen", command=return_to_main).pack(pady=10)
+        tk.Button(third_root, text="Back to Entry Screen", font=("Arial", 18), command=return_to_main).grid(row=1, column=1, pady=20)
 
-        # Create a frame to hold the countdown image
-        countdown_frame = tk.Frame(third_root, bg="black")
-        countdown_frame.pack(side=tk.TOP, fill=tk.X)
+        # Red Team Frame
+        red_team_frame = tk.Frame(third_root, bg="#500000", bd=2, relief="ridge")
+        red_team_frame.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
 
-        # Create a label to display the countdown images
-        countdown_label = tk.Label(countdown_frame, bg="black")
-        countdown_label.pack(pady=10)
+        # Event Log Frame (center frame for events)
+        event_frame = tk.Frame(third_root, bg="black", bd=2, relief="ridge")
+        event_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
 
-        # Path to the countdown images
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        countdown_images_path = os.path.join(script_dir, 'assets', 'countdown_images')
+        # Green Team Frame
+        green_team_frame = tk.Frame(third_root, bg="#004d00", bd=2, relief="ridge")
+        green_team_frame.grid(row=0, column=2, padx=20, pady=20, sticky="nsew")
 
-        # Function to start the initial countdown
-        def start_countdown(count=31):
+        # Red Team Label and Player List
+        tk.Label(red_team_frame, text="Red Team", font=("Arial", 36, "bold"), bg="#500000", fg="white").pack(pady=20)
+        for player in red_team_players:
+            name = player.get("name", "Unknown")
+            tk.Label(red_team_frame, text=f"{name}  0", font=("Arial", 24), bg="#500000", fg="white").pack(pady=5)
+        red_team_score = tk.Label(red_team_frame, text="0", font=("Arial", 48, "bold"), bg="#500000", fg="white")
+        red_team_score.pack(side="bottom", pady=20)
+
+        # Green Team Label and Player List
+        tk.Label(green_team_frame, text="Green Team", font=("Arial", 36, "bold"), bg="#004d00", fg="white").pack(pady=20)
+        for player in green_team_players:
+            name = player.get("name", "Unknown")
+            tk.Label(green_team_frame, text=f"{name}  0", font=("Arial", 24), bg="#004d00", fg="white").pack(pady=5)
+        green_team_score = tk.Label(green_team_frame, text="0", font=("Arial", 48, "bold"), bg="#004d00", fg="white")
+        green_team_score.pack(side="bottom", pady=20)
+
+        # Event Log Title in the Center
+        tk.Label(event_frame, text="EVENT LOG", font=("Arial", 36, "bold"), bg="black", fg="white").pack(pady=20)
+
+        # Event Log Area (Scrollable Text)
+        event_text = tk.Text(event_frame, wrap="word", font=("Arial", 24), bg="black", fg="white", height=15)
+        event_text.pack(fill="both", expand=True, padx=10, pady=10)
+        scrollbar = tk.Scrollbar(event_text, command=event_text.yview)
+        event_text.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+
+        # Function to add events to the log
+        def add_event(event_message):
+            event_text.insert("end", f"{event_message}\n")
+            event_text.see("end")  # Scroll to the latest event
+
+        # 30-Second Countdown with Images
+        countdown_label = tk.Label(event_frame, bg="black")
+        countdown_label.pack(pady=20)
+
+        def start_initial_countdown(count=30):
             if count > 0:
-                # Load the image corresponding to the current count
-                image_filename = f"{count-1}.png"
-                image_path = os.path.join(countdown_images_path, image_filename)
+                image_filename = f"{count}.png"
+                image_path = os.path.join("assets", "countdown_images", image_filename)
                 try:
                     img = Image.open(image_path)
-                    img = img.resize((200, 100), Image.LANCZOS)
+                    img = img.resize((200, 200), Image.LANCZOS)
                     photo = ImageTk.PhotoImage(img)
                     countdown_label.config(image=photo)
                     countdown_label.image = photo  # Keep a reference
                 except Exception as e:
-                    print(f"Error loading image {image_path}: {e}")
+                    logging.error(f"Error loading image {image_path}: {e}")
+                    countdown_label.config(text=f"{count}", font=("Arial", 48, "bold"), fg="white")
 
-                # Schedule the next update after 1 second
-                third_root.after(1000, start_countdown, count-1)
+                third_root.after(1000, start_initial_countdown, count - 1)
             else:
-                # Countdown finished, start the game timer
-                start_gamecountdown(360)
+                countdown_label.config(image="", text="")  # Clear countdown
+                start_game_countdown(360)  # Start the main game timer after countdown
 
-        # Function to start the 6-minute game timer
-        def start_gamecountdown(count):
-            if count == 360:
-                # First call, create the label
-                third_root.gamecountdown_label = tk.Label(third_root, font=("Arial", 20), bg='black', fg='white')
-                third_root.gamecountdown_label.pack(padx=20, pady=20)
+        # Main Game Timer (6 minutes)
+        timer_frame = tk.Frame(event_frame, bg="black")
+        timer_frame.pack(pady=20)
+        time_remaining_label = tk.Label(timer_frame, text="Time Remaining:", font=("Arial", 36, "bold"), bg="black", fg="white")
+        time_remaining_label.pack()
+        timer_label = tk.Label(timer_frame, text="6:00", font=("Arial", 48, "bold"), bg="black", fg="white")
+        timer_label.pack()
+
+        def start_game_countdown(count):
+            minutes, seconds = divmod(count, 60)
+            timer_label.config(text=f"{minutes}:{seconds:02d}")
             if count > 0:
-                minutes, seconds = divmod(count, 60)
-                third_root.gamecountdown_label.config(text=f"Time Left: {minutes:02d}:{seconds:02d}")
-                third_root.after(1000, start_gamecountdown, count-1)
+                third_root.after(1000, start_game_countdown, count - 1)
             else:
-                third_root.gamecountdown_label.config(text="Game Over!")
-                return_to_main()
+                broadcast_game_end()
 
-        # Start the initial countdown
-        start_countdown()
 
-        # Create frames for each team below the countdown
-        teams_frame = tk.Frame(third_root, bg="black")
-        teams_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        # Start the 30-second countdown with images
+        start_initial_countdown()
 
-        # Frame for Red Team
-        frame_a = tk.Frame(teams_frame, bg="#500000", bd=2, relief="ridge")
-        frame_a.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        # Frame for Green Team
-        frame_b = tk.Frame(teams_frame, bg="#004d00", bd=2, relief="ridge")
-        frame_b.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        # Team Labels
-        tk.Label(frame_a, text="RED TEAM", font=("Arial", 14, "bold"), bg="#500000", fg="white").pack(pady=5)
-        tk.Label(frame_b, text="GREEN TEAM", font=("Arial", 14, "bold"), bg="#004d00", fg="white").pack(pady=5)
-
-        # Function to display team names
-        def display_team_names():
-            # Display names for Team A
-            for player in red_team_players:
-                name = player['name']
-                label = tk.Label(frame_a, text=name, bg="#500000", font=("Arial", 16))
-                label.pack(pady=5)
-
-            # Display names for Team B
-            for player in green_team_players:
-                name = player['name']
-                label = tk.Label(frame_b, text=name, bg="#004d00", font=("Arial", 16))
-                label.pack(pady=5)
-
-        # Call the function to display names
-        display_team_names()
-
-        # Start the main loop for the third_root window
         third_root.mainloop()
 
-    # Function to save player data
+
+
     def save_player_data(team, player_id_entry, name_entry, player_array):
         player_id = player_id_entry.get().strip()
         player_name = name_entry.get().strip()
 
-        if player_id and player_name:
-            player_data = {'id': player_id, 'name': player_name}
-            player_array.append(player_data)
-            print(f"Player added to {team}: {player_data}")
-        elif player_id:
-            player_data = {'id': player_id}
-            player_name = check_for_player(player_id)
-            if not player_name:
-                print("Player not found under ID, " + str(player_id))
-                player_name = simpledialog.askstring('player_name', 'What would you like your Player Name to be?')
-                if player_name:
-                    player_data = {'id': player_id, 'name': player_name}
-                    player_array.append(player_data)
-                    name_entry.delete(0, tk.END)
-                    name_entry.insert(0, player_name)
-            else:
-                print("Here is the name of the player for ID " + str(player_id) + ", " + str(player_name))
-                player_data = {'id': player_id, 'name': player_name}
-                player_array.append(player_data)
+        if not player_id:
+            messagebox.showerror("Input Error", "Player ID must be filled!")
+            return
+
+        if not player_name:
+            player_name_db = check_for_player(player_id)
+            if player_name_db:
+                player_name = player_name_db
                 name_entry.delete(0, tk.END)
                 name_entry.insert(0, player_name)
+            else:
+                player_name = simpledialog.askstring('Player Name', 'Enter your Player Name:')
+                if not player_name:
+                    messagebox.showerror("Input Error", "Player Name is required!")
+                    return
+                if not add_player(player_id, player_name):
+                    messagebox.showerror("Database Error", "Failed to add player to the database.")
+                    return
 
-                equipment_id = simpledialog.askstring('equipment_id', 'What is the equipment ID for the entered player?')
-                if equipment_id:  # Check if an equipment ID was provided
-                    sock.sendto(equipment_id.encode('utf-8'), ('<broadcast>', 7501))
-                    print(f"Broadcasting equipment ID: {equipment_id}")
-                else:
-                    print("No equipment ID provided; broadcasting skipped.")
-        else:
-            messagebox.showerror("Input Error", "Both fields (ID and Name) must be filled!")
+        player_data = {'id': player_id, 'name': player_name}
+        player_array.append(player_data)
+        logging.info(f"Player added to {team} team: {player_data}")
 
-    # Creating frames for Red Team and Green Team
-    red_team_frame = tk.Frame(root, bg="#500000", bd=2, relief="ridge", width=580, height=480)
-    red_team_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+    # Create frames for Red Team and Green Team
+    red_team_frame = tk.Frame(root, bg="#500000", bd=2, relief="ridge")
+    red_team_frame.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
+    root.grid_columnconfigure(0, weight=1)
 
-    green_team_frame = tk.Frame(root, bg="#004d00", bd=2, relief="ridge", width=580, height=480)
-    green_team_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+    green_team_frame = tk.Frame(root, bg="#004d00", bd=2, relief="ridge")
+    green_team_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
+    root.grid_columnconfigure(1, weight=1)
+
+    # Configure grid weights for team frames
+    for i in range(0, 20):  # Adjust as necessary
+        red_team_frame.grid_rowconfigure(i, weight=1)
+        green_team_frame.grid_rowconfigure(i, weight=1)
+    for i in range(4):
+        red_team_frame.grid_columnconfigure(i, weight=1)
+        green_team_frame.grid_columnconfigure(i, weight=1)
 
     # Team Labels
-    tk.Label(red_team_frame, text="RED TEAM", font=("Arial", 14, "bold"), bg="#500000", fg="white").grid(row=0, column=0, columnspan=4)
-    tk.Label(green_team_frame, text="GREEN TEAM", font=("Arial", 14, "bold"), bg="#004d00", fg="white").grid(row=0, column=0, columnspan=4)
+    tk.Label(red_team_frame, text="RED TEAM", font=LARGE_FONT, bg="#500000", fg="white").grid(row=0, column=0, columnspan=4, pady=10)
+    tk.Label(green_team_frame, text="GREEN TEAM", font=LARGE_FONT, bg="#004d00", fg="white").grid(row=0, column=0, columnspan=4, pady=10)
 
-    # Player entry slots for both teams
+    # Add column headers
+    tk.Label(red_team_frame, text="No.", font=MEDIUM_FONT, bg="#500000", fg="white", width=5).grid(row=1, column=0)
+    tk.Label(red_team_frame, text="ID", font=MEDIUM_FONT, bg="#500000", fg="white").grid(row=1, column=1)
+    tk.Label(red_team_frame, text="Name", font=MEDIUM_FONT, bg="#500000", fg="white").grid(row=1, column=2)
+
+    tk.Label(green_team_frame, text="No.", font=MEDIUM_FONT, bg="#004d00", fg="white", width=5).grid(row=1, column=0)
+    tk.Label(green_team_frame, text="ID", font=MEDIUM_FONT, bg="#004d00", fg="white").grid(row=1, column=1)
+    tk.Label(green_team_frame, text="Name", font=MEDIUM_FONT, bg="#004d00", fg="white").grid(row=1, column=2)
+
     num_players = 18
 
     for i in range(num_players):
+        row_num = i + 2  # Adjusted row index to account for team label and headers
+
         # Red Team
-        tk.Label(red_team_frame, text=f"{i+1}", bg="#500000", fg="white", width=2, anchor="e").grid(row=i+1, column=0, sticky="e")
-        red_player_id_entry = tk.Entry(red_team_frame, width=10)
-        red_player_id_entry.grid(row=i+1, column=1, padx=5)
-        red_team_id_entries.append(red_player_id_entry)  # Store reference
+        tk.Label(red_team_frame, text=f"{i+1}", font=MEDIUM_FONT, bg="#500000", fg="white", width=5, anchor="e").grid(row=row_num, column=0, sticky="e")
+        red_player_id_entry = tk.Entry(red_team_frame, width=15, font=MEDIUM_FONT)
+        red_player_id_entry.grid(row=row_num, column=1, padx=10, pady=5, sticky="ew")
+        red_team_id_entries.append(red_player_id_entry)
 
-        red_name_entry = tk.Entry(red_team_frame, width=15)
-        red_name_entry.grid(row=i+1, column=2, padx=5)
-        red_team_name_entries.append(red_name_entry)  # Store reference
+        red_name_entry = tk.Entry(red_team_frame, width=20, font=MEDIUM_FONT)
+        red_name_entry.grid(row=row_num, column=2, padx=10, pady=5, sticky="ew")
+        red_team_name_entries.append(red_name_entry)
 
-        tk.Button(red_team_frame, text="Save", bg="gray", fg="black",
-                  command=lambda red_player_id_entry=red_player_id_entry, red_name_entry=red_name_entry:
-                  save_player_data('Red', red_player_id_entry, red_name_entry, red_team_players)).grid(row=i+1, column=3, padx=5)
+        tk.Button(
+            red_team_frame, text="Save", font=MEDIUM_FONT, bg="gray", fg="black", width=10,
+            command=lambda entry_id=red_player_id_entry, entry_name=red_name_entry:
+            save_player_data('Red', entry_id, entry_name, red_team_players)
+        ).grid(row=row_num, column=3, padx=10, pady=5)
 
         # Green Team
-        tk.Label(green_team_frame, text=f"{i+1}", bg="#004d00", fg="white", width=2, anchor="e").grid(row=i+1, column=0, sticky="e")
-        green_player_id_entry = tk.Entry(green_team_frame, width=10)
-        green_player_id_entry.grid(row=i+1, column=1, padx=5)
-        green_team_id_entries.append(green_player_id_entry)  # Store reference
+        tk.Label(green_team_frame, text=f"{i+1}", font=MEDIUM_FONT, bg="#004d00", fg="white", width=5, anchor="e").grid(row=row_num, column=0, sticky="e")
+        green_player_id_entry = tk.Entry(green_team_frame, width=15, font=MEDIUM_FONT)
+        green_player_id_entry.grid(row=row_num, column=1, padx=10, pady=5, sticky="ew")
+        green_team_id_entries.append(green_player_id_entry)
 
-        green_name_entry = tk.Entry(green_team_frame, width=15)
-        green_name_entry.grid(row=i+1, column=2, padx=5)
-        green_team_name_entries.append(green_name_entry)  # Store reference
+        green_name_entry = tk.Entry(green_team_frame, width=20, font=MEDIUM_FONT)
+        green_name_entry.grid(row=row_num, column=2, padx=10, pady=5, sticky="ew")
+        green_team_name_entries.append(green_name_entry)
 
-        tk.Button(green_team_frame, text="Save", bg="gray", fg="black",
-                  command=lambda green_player_id_entry=green_player_id_entry, green_name_entry=green_name_entry:
-                  save_player_data('Green', green_player_id_entry, green_name_entry, green_team_players)).grid(row=i+1, column=3, padx=5)
+        tk.Button(
+            green_team_frame, text="Save", font=MEDIUM_FONT, bg="gray", fg="black", width=10,
+            command=lambda entry_id=green_player_id_entry, entry_name=green_name_entry:
+            save_player_data('Green', entry_id, entry_name, green_team_players)
+        ).grid(row=row_num, column=3, padx=10, pady=5)
 
-    # Game mode label at the bottom
-    game_mode_label = tk.Label(root, text="Game Mode: Standard public mode", font=("Arial", 12), bg="black", fg="white")
-    game_mode_label.grid(row=1, column=0, columnspan=2)
+    game_mode_label = tk.Label(root, text="Game Mode: Standard public mode", font=MEDIUM_FONT, bg="black", fg="white")
+    game_mode_label.grid(row=1, column=0, columnspan=2, pady=10)
 
-    # Control buttons
     button_frame = tk.Frame(root, bg="black")
     button_frame.grid(row=2, column=0, columnspan=2, pady=10)
+    root.grid_rowconfigure(2, weight=0)
 
-    # Function to clear all player data
     def clear_all_player_data():
-        # Clear Entry fields for Red Team
-        for entry in red_team_id_entries + red_team_name_entries:
+        for entry in red_team_id_entries + red_team_name_entries + green_team_id_entries + green_team_name_entries:
             entry.delete(0, tk.END)
-        # Clear Entry fields for Green Team
-        for entry in green_team_id_entries + green_team_name_entries:
-            entry.delete(0, tk.END)
-        # Clear the player data lists
         red_team_players.clear()
         green_team_players.clear()
-        print("All player entries have been cleared from the lists.")
+        logging.info("All player entries have been cleared.")
 
-        # Print the lists to confirm they are empty
-        print(f"Red Team Players: {red_team_players}")
-        print(f"Green Team Players: {green_team_players}")
-
-    # Define button texts and commands
     button_texts = [
-        ("F1 Print Players", print_players),  # Placeholder function
-        ("F2 Game Parameters", lambda: print("Game Parameters function to be implemented")),  # Placeholder function
-        ("F3 Start Game", start_game),  # Call start_game function
-        ("F5 Preferred Games", lambda: print("Preferred Games function to be implemented")),  # Placeholder function
-        ("F7 View Game", lambda: print("View Game function to be implemented")),  # Placeholder function
-        ("F8 View Game", lambda: print("View Game function to be implemented")),  # Placeholder function
-        ("F10 Flick Sync", lambda: print("Flick Sync function to be implemented")),  # Placeholder function
-        ("F12 Clear Game", clear_all_player_data),  # Bind to the clear_all_player_data function
+        ("F1 Print Players", print_players),
+        ("F3 Start Game", start_game),
+        ("F12 Clear Game", clear_all_player_data),
     ]
 
-    def bind_keys(root, key_command_pairs):
+    def bind_keys(root_widget, key_command_pairs):
         for key, command in key_command_pairs:
-            root.bind(key, lambda event, cmd=command: cmd())
-        
+            root_widget.bind(key, lambda event, cmd=command: cmd())
 
     key_command_pairs = [
-    ('<F1>', print_players),
-    ('<F3>', start_game),
-    ('<F12>', clear_all_player_data),
-]
+        ('<F1>', print_players),
+        ('<F3>', start_game),
+        ('<F12>', clear_all_player_data),
+    ]
 
     bind_keys(root, key_command_pairs)
 
-    # Creating buttons with customized properties
     for i, (text, command) in enumerate(button_texts):
-        tk.Button(button_frame, text=text, width=15, font=("Arial", 10), bg="black", fg="green", command=command).grid(row=0, column=i, padx=5, pady=5)
+        tk.Button(button_frame, text=text, width=20, font=MEDIUM_FONT, bg="black", fg="green", command=command).grid(row=0, column=i, padx=10, pady=5)
 
-    # Instruction label
-    instructions = tk.Label(root, text="Use F1, F2, F3, etc. to navigate", font=("Arial", 10), bg="black", fg="white")
-    instructions.grid(row=3, column=0, columnspan=2)
+    instructions = tk.Label(root, text="Use F1, F2, F3, etc. to navigate", font=MEDIUM_FONT, bg="black", fg="white")
+    instructions.grid(row=3, column=0, columnspan=2, pady=10)
 
-   
     root.mainloop()
 
-    
-
-
-
-
-
-
-# Server function
 def server():
-    # Create a UDP socket
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    server_socket.bind(('127.0.0.1', 7501))
-    
-    
-    # DEBUG: print to terminal
-    print("Server is listening on port 7501...")
+    try:
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        server_socket.bind(('', SERVER_PORT))
+        logging.info(f"Server is listening on port {SERVER_PORT}...")
 
-    while True:
-        data, addr = server_socket.recvfrom(1024)  # Buffer size is 1024 bytes
-        print(f"Received from {addr}: {data.decode()}")
-        
-        # Optionally send a response back to the client
-        response = f"Received: {data.decode()}"
-        server_socket.sendto(response.encode(), addr)
+        while True:
+            data, addr = server_socket.recvfrom(1024)
+            message = data.decode('utf-8')
+            logging.info(f"Received from {addr}: {message}")
+            
+            # Handle game start or end codes, or display player actions in the event log
+            if message == "202":
+                add_event("Game started!")
+                continue
+            elif message == "221":
+                add_event("Game ended!")
+                break
 
-# Function to start the server in a separate thread
+            # Parse and display player actions in the event log
+            if ':' in message:
+                attacker_id, target_id = message.split(':')
+                if attacker_id.isdigit() and target_id.isdigit():
+                    action_message = f"Player {attacker_id} hit Player {target_id}"
+                    add_event(action_message)
+
+                    # Send a response back if necessary
+                    response_id = process_action(int(attacker_id), int(target_id))
+                    server_socket.sendto(str(response_id).encode('utf-8'), addr)
+
+    except Exception as e:
+        logging.error(f"Server error: {e}")
+    finally:
+        server_socket.close()
+
+
+# Process player action based on attacker_id and target_id
+def process_action(attacker_id, target_id):
+    if target_id == 43 or target_id == 53:
+        # Handle base capture
+        if target_id == 43:
+            add_points_to_player(attacker_id, 100, "B")  # Red player captures green base
+        elif target_id == 53:
+            add_points_to_player(attacker_id, 100, "B")  # Green player captures red base
+        return attacker_id  # Return attacker’s ID for base capture
+    else:
+        # Handle regular hit
+        if is_same_team(attacker_id, target_id):
+            add_points_to_player(attacker_id, -10)  # Friendly fire penalty
+            return attacker_id
+        else:
+            add_points_to_player(attacker_id, 10)  # Regular hit score
+            return target_id
+
+
+# Updating the team score display for either the Red or Green team
+def update_team_score_display(team):
+    if team == "Red":
+        total_score = sum(player.get('score', 0) for player in red_team_players)
+        red_team_score.config(text=str(total_score))
+    elif team == "Green":
+        total_score = sum(player.get('score', 0) for player in green_team_players)
+        green_team_score.config(text=str(total_score))
+
+# Utility functions
+def is_same_team(attacker_id, target_id):
+    # Check if both players are in the red team
+    if any(player['id'] == attacker_id for player in red_team_players) and \
+       any(player['id'] == target_id for player in red_team_players):
+        return True
+    # Check if both players are in the green team
+    elif any(player['id'] == attacker_id for player in green_team_players) and \
+         any(player['id'] == target_id for player in green_team_players):
+        return True
+    # Players are on different teams
+    return False
+
+# Adding points to a player based on their ID and updating their badge if needed
+def add_points_to_player(player_id, points, badge=None):
+    # Update score for red team player if found
+    for player in red_team_players:
+        if player['id'] == player_id:
+            player['score'] = player.get('score', 0) + points
+            if badge:
+                player['name'] = f"{badge} {player['name']}"
+            update_team_score_display("Red")
+            return
+
+    # Update score for green team player if found
+    for player in green_team_players:
+        if player['id'] == player_id:
+            player['score'] = player.get('score', 0) + points
+            if badge:
+                player['name'] = f"{badge} {player['name']}"
+            update_team_score_display("Green")
+            return
+
+
+
 def start_server():
     server_thread = threading.Thread(target=server)
-    server_thread.daemon = True  # Daemonize the thread to exit when the main program exits
+    server_thread.daemon = True
     server_thread.start()
 
+
 def listen_for_broadcasts():
-    listen_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    listen_socket.bind(('', 7501))  # Bind to all interfaces on port 7501
+    try:
+        listen_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        listen_socket.bind(('', BROADCAST_PORT))
+        logging.info(f"Listening for broadcasts on port {BROADCAST_PORT}...")
 
-    print("Listening for broadcasts on port 7501...")
+        while True:
+            data, addr = listen_socket.recvfrom(1024)
+            logging.info(f"Received broadcast from {addr}: {data.decode('utf-8')}")
+    except Exception as e:
+        logging.error(f"Broadcast listener error: {e}")
+    finally:
+        listen_socket.close()
 
-    while True:
-        data, addr = listen_socket.recvfrom(1024)  # Buffer size is 1024 bytes
-        print(f"Received broadcast from {addr}: {data.decode('utf-8')}")
-
-# Function to start the broadcast listener in a separate thread
 def start_broadcast_listener():
     listener_thread = threading.Thread(target=listen_for_broadcasts)
-    listener_thread.daemon = True  # Daemonize the thread
+    listener_thread.daemon = True
     listener_thread.start()
 
 if __name__ == "__main__":
-    # Start the server thread
     start_server()
-    start_broadcast_listener()
-    connect()
-    # Show the splash screen, which will eventually lead to the main screen
+    #start_broadcast_listener()
     show_splash_screen()
