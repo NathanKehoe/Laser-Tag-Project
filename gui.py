@@ -10,6 +10,12 @@ import time
 from database import connect, check_for_player, add_player, remove_player
 from config import DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, BROADCAST_PORT, SERVER_PORT
 
+# import for music
+import pygame
+
+# Initialize pygame mixer for music playback
+pygame.mixer.init()
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
@@ -18,8 +24,35 @@ LARGE_FONT = ("Arial", 24)
 MEDIUM_FONT = ("Arial", 18)
 SMALL_FONT = ("Arial", 14)
 
+# song directory
+SONG_DIRECTORY = "assets/music"
+song_files = [f for f in os.listdir(SONG_DIRECTORY) if f.endswith('.mp3')]
+
 # Global variables
 root = None
+
+# play background music on endless loop
+def play_background_music():
+    if not song_files:
+        logging.warning("No songs found in the directory.")
+        return
+    
+    while True:
+        song_path = os.path.join(SONG_DIRECTORY, random.choice(song_files))
+        pygame.mixer.music.load(song_path)
+        pygame.mixer.music.play()
+        logging.info(f"Playing background song: {song_path}")
+
+        # Wait for the song to finish before loading a new one
+        while pygame.mixer.music.get_busy():
+            time.sleep(1)  # Check every second if the song has finished
+
+# play background music on separate thread
+def start_background_music_thread():
+    """Start a separate thread to play background music."""
+    music_thread = threading.Thread(target=play_background_music)
+    music_thread.daemon = True  # Ensures thread closes when main program exits
+    music_thread.start()
 
 # Maybe move these to another file
 def broadcast_game_start():
@@ -476,6 +509,7 @@ def start_broadcast_listener():
     listener_thread.start()
 
 if __name__ == "__main__":
+    start_background_music_thread()
     start_server()
     #start_broadcast_listener()
     show_splash_screen()
