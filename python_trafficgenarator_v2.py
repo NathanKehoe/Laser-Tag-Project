@@ -3,7 +3,7 @@ import random
 import time
 
 bufferSize  = 1024
-serverAddressPort   = ("0.0.0.0", 7500) # had to change to make work
+serverAddressPort   = ("127.0.0.1", 7500) # changed back to original. must work with original.
 clientAddressPort   = ("127.0.0.1", 7501)
 
 
