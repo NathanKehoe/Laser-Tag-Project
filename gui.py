@@ -8,8 +8,8 @@ import os
 import logging
 import time
 from database import connect, check_for_player, add_player, remove_player
-from config import DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, BROADCAST_PORT, SERVER_PORT
-
+from config import DB_NAME, DB_USER, DB_HOST, DB_PORT, BROADCAST_PORT, SERVER_PORT
+import random
 # import for music
 import pygame
 
@@ -30,6 +30,29 @@ song_files = [f for f in os.listdir(SONG_DIRECTORY) if f.endswith('.mp3')]
 
 # Global variables
 root = None
+red_team_players = []
+green_team_players = []
+countdown_running = True
+
+
+class Player:
+        def __init__(self, player_id, player_name, score, equipment_id=None):
+            self.player_id = player_id
+            self.player_name = player_name
+            self.score = score
+            self.equipment_id = equipment_id
+
+        def __str__(self):
+            return f"Player ID: {self.player_id}, Name: {self.player_name}, Score: {self.score}, Equipment ID: {self.equipment_id}"
+
+        def update_equipment_id(self, new_equipment_id):
+            self.equipment_id = new_equipment_id
+
+        def get(self, attribute, default=None):
+            return getattr(self, attribute, default)
+    
+broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
 # play background music on endless loop
 def play_background_music():
@@ -56,21 +79,23 @@ def start_background_music_thread():
 
 # Maybe move these to another file
 def broadcast_game_start():
-    broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    for i in range(3):  # Broadcast `202` three times
-        logging.info(f"Broadcasting start signal '202', attempt {i + 1}")
-        broadcast_socket.sendto(b'202', ('<broadcast>', BROADCAST_PORT))
-        time.sleep(0.5)  # Short delay between broadcasts
-    broadcast_socket.close()
-    logging.info("Game start signal sent (202)")
+    try:
+        while countdown_running:
+            broadcast_socket.sendto(b'202', ('127.0.0.1', BROADCAST_PORT))
+            time.sleep(0.5)  # Delay between broadcasts
+    except Exception as e:
+        logging.error(f"Error during broadcasting: {e}")
+    finally:
+        broadcast_socket.close()
+        logging.info("Broadcast socket closed. Game start signal sent (202)")
+
 
 
 def broadcast_game_end():
     broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     for _ in range(3):
-        broadcast_socket.sendto(b'221', ('<broadcast>', BROADCAST_PORT))
+        broadcast_socket.sendto(b'221', ('127.0.0.1', BROADCAST_PORT))
         time.sleep(0.5)
     broadcast_socket.close()
     logging.info("Game end signal sent (221)")
@@ -79,7 +104,7 @@ def broadcast_game_end():
 def show_splash_screen():
     splash_root = tk.Tk()
     splash_root.overrideredirect(True)
-    splash_root.geometry("1920x1080+0+0")  # Fullscreen
+    splash_root.geometry("1280x720+0+0")  # Fullscreen
 
     try:
         splash_image = Image.open("assets/splash_image.png")
@@ -106,20 +131,22 @@ def main_screen():
         return
     root = tk.Tk()
     root.title("Entry Terminal")
-    root.geometry("1920x1080")
+    root.geometry("1280x720")
     root.configure(bg="black")
 
     # Add binding to close the application when Esc is pressed
     root.bind("<Escape>", lambda event: root.destroy())
 
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    
     # Configure grid weights
     root.grid_rowconfigure(0, weight=1)
     root.grid_columnconfigure(0, weight=1)
     root.grid_columnconfigure(1, weight=1)
 
     # Creating frames for Red Team and Green Team
-    red_team_players = []
-    green_team_players = []
+    
 
     # Lists to hold references to Entry widgets
     red_team_id_entries = []
@@ -137,13 +164,14 @@ def main_screen():
 
     def start_game():
         root.withdraw()
-        broadcast_game_start()
         third_screen()
+        
+        
 
     def third_screen():
         third_root = tk.Toplevel(root)
         third_root.title("Player Action Screen")
-        third_root.geometry("1920x1080")
+        third_root.geometry("1280x720")
         third_root.configure(bg="black")
 
         # Configure grid weights for layout structure
@@ -157,6 +185,7 @@ def main_screen():
         def return_to_main():
             third_root.destroy()
             root.deiconify()
+            broadcast_game_end()
 
         tk.Button(third_root, text="Back to Entry Screen", font=("Arial", 18), command=return_to_main).grid(row=1, column=1, pady=20)
 
@@ -175,7 +204,7 @@ def main_screen():
         # Red Team Label and Player List
         tk.Label(red_team_frame, text="Red Team", font=("Arial", 36, "bold"), bg="#500000", fg="white").pack(pady=20)
         for player in red_team_players:
-            name = player.get("name", "Unknown")
+            name = player.get("player_name", "Unknown")
             tk.Label(red_team_frame, text=f"{name}  0", font=("Arial", 24), bg="#500000", fg="white").pack(pady=5)
         red_team_score = tk.Label(red_team_frame, text="0", font=("Arial", 48, "bold"), bg="#500000", fg="white")
         red_team_score.pack(side="bottom", pady=20)
@@ -183,7 +212,7 @@ def main_screen():
         # Green Team Label and Player List
         tk.Label(green_team_frame, text="Green Team", font=("Arial", 36, "bold"), bg="#004d00", fg="white").pack(pady=20)
         for player in green_team_players:
-            name = player.get("name", "Unknown")
+            name = player.get("player_name", "Unknown")
             tk.Label(green_team_frame, text=f"{name}  0", font=("Arial", 24), bg="#004d00", fg="white").pack(pady=5)
         green_team_score = tk.Label(green_team_frame, text="0", font=("Arial", 48, "bold"), bg="#004d00", fg="white")
         green_team_score.pack(side="bottom", pady=20)
@@ -224,6 +253,9 @@ def main_screen():
                 third_root.after(1000, start_initial_countdown, count - 1)
             else:
                 countdown_label.config(image="", text="")  # Clear countdown
+                global countdown_running
+                countdown_running = True  # Start broadcasting
+                threading.Thread(target=broadcast_game_start, daemon=True).start()
                 start_game_countdown(360)  # Start the main game timer after countdown
 
         # Main Game Timer (6 minutes)
@@ -238,6 +270,7 @@ def main_screen():
             minutes, seconds = divmod(count, 60)
             timer_label.config(text=f"{minutes}:{seconds:02d}")
             if count > 0:
+                
                 third_root.after(1000, start_game_countdown, count - 1)
             else:
                 broadcast_game_end()
@@ -245,37 +278,71 @@ def main_screen():
 
         # Start the 30-second countdown with images
         start_initial_countdown()
-
         third_root.mainloop()
 
 
 
-    def save_player_data(team, player_id_entry, name_entry, player_array):
+    
+
+
+# Now, you can refactor your function to use the Player class
+    def save_player_data(team, player_id_entry, name_entry, player_array, parent_window):
         player_id = player_id_entry.get().strip()
         player_name = name_entry.get().strip()
+        score = 0
 
-        if not player_id:
-            messagebox.showerror("Input Error", "Player ID must be filled!")
-            return
+        if player_id and player_name:
+            if player_id.isdigit():
+                player_id = int(player_id)
+            else:
+                print("Invalid player ID.")
+                return
 
-        if not player_name:
-            player_name_db = check_for_player(player_id)
-            if player_name_db:
-                player_name = player_name_db
+            player = Player(player_id, player_name, score)
+            player_array.append(player)
+            print(f"Player added to {team}: {player}")
+
+            equipment_id = simpledialog.askstring('Equipment ID', 'What is the equipment ID for the entered player?', parent=parent_window)
+            if equipment_id:
+                player.update_equipment_id(equipment_id)
+                sock.sendto(equipment_id.encode('utf-8'), ('<broadcast>', 7501))
+                print(f"Broadcasting equipment ID: {equipment_id}")
                 name_entry.delete(0, tk.END)
                 name_entry.insert(0, player_name)
             else:
-                player_name = simpledialog.askstring('Player Name', 'Enter your Player Name:')
-                if not player_name:
-                    messagebox.showerror("Input Error", "Player Name is required!")
-                    return
-                if not add_player(player_id, player_name):
-                    messagebox.showerror("Database Error", "Failed to add player to the database.")
-                    return
+                print("No equipment ID provided; broadcasting skipped.")
 
-        player_data = {'id': player_id, 'name': player_name}
-        player_array.append(player_data)
-        logging.info(f"Player added to {team} team: {player_data}")
+        elif player_id:
+            player_name = check_for_player(player_id)
+
+            if not player_name:
+                print(f"Player not found under ID {player_id}.")
+                player_name = simpledialog.askstring('Player Name', f"What would you like your Player Name to be for ID {player_id}?", parent=parent_window)
+
+            if player_name:
+                player = Player(int(player_id), player_name, score)
+
+                equipment_id = simpledialog.askstring('Equipment ID', 'What is the equipment ID for the entered player?', parent=parent_window)
+
+                if equipment_id:
+                    player.update_equipment_id(equipment_id)
+                    sock.sendto(equipment_id.encode('utf-8'), ('<broadcast>', 7501))
+                    print(f"Broadcasting equipment ID: {equipment_id}")
+                    name_entry.delete(0, tk.END)
+                    name_entry.insert(0, player_name)
+                else:
+                    print("No equipment ID provided; broadcasting skipped.")
+            else:
+                print("Player name not provided; player not added.")
+
+        else:
+            messagebox.showerror("Input Error", "Both fields (ID and Name) must be filled!")
+
+
+
+
+
+
 
     # Create frames for Red Team and Green Team
     red_team_frame = tk.Frame(root, bg="#500000", bd=2, relief="ridge")
@@ -325,7 +392,7 @@ def main_screen():
         tk.Button(
             red_team_frame, text="Save", font=MEDIUM_FONT, bg="gray", fg="black", width=10,
             command=lambda entry_id=red_player_id_entry, entry_name=red_name_entry:
-            save_player_data('Red', entry_id, entry_name, red_team_players)
+            save_player_data('Red', entry_id, entry_name, red_team_players, root)
         ).grid(row=row_num, column=3, padx=10, pady=5)
 
         # Green Team
@@ -341,7 +408,7 @@ def main_screen():
         tk.Button(
             green_team_frame, text="Save", font=MEDIUM_FONT, bg="gray", fg="black", width=10,
             command=lambda entry_id=green_player_id_entry, entry_name=green_name_entry:
-            save_player_data('Green', entry_id, entry_name, green_team_players)
+            save_player_data('Green', entry_id, entry_name, green_team_players, root)
         ).grid(row=row_num, column=3, padx=10, pady=5)
 
     game_mode_label = tk.Label(root, text="Game Mode: Standard public mode", font=MEDIUM_FONT, bg="black", fg="white")
@@ -387,97 +454,84 @@ def main_screen():
 def server():
     try:
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        server_socket.bind(('', SERVER_PORT))
+        server_socket.bind(('127.0.0.1', SERVER_PORT))
         logging.info(f"Server is listening on port {SERVER_PORT}...")
 
         while True:
             data, addr = server_socket.recvfrom(1024)
             message = data.decode('utf-8')
-            logging.info(f"Received from {addr}: {message}")
-            
-            # Handle game start or end codes, or display player actions in the event log
-            if message == "202":
-                add_event("Game started!")
-                continue
-            elif message == "221":
-                add_event("Game ended!")
-                break
-
-            # Parse and display player actions in the event log
+        
             if ':' in message:
                 attacker_id, target_id = message.split(':')
                 if attacker_id.isdigit() and target_id.isdigit():
-                    action_message = f"Player {attacker_id} hit Player {target_id}"
-                    add_event(action_message)
+                    attacker_id = int(attacker_id)
+                    target_id = int(target_id)
 
-                    # Send a response back if necessary
-                    response_id = process_action(int(attacker_id), int(target_id))
-                    server_socket.sendto(str(response_id).encode('utf-8'), addr)
+                    if target_id == 43 or target_id == 53:
+                        if target_id == 43:
+                            add_points_to_player(attacker_id, 100, "B")  # Red player captures green base
+                        elif target_id == 53:
+                            add_points_to_player(attacker_id, 100, "B")  # Green player captures red base
+
+                    attacker_exists = any(player.player_id == attacker_id for player in (red_team_players + green_team_players))
+                    
+                    target_exists = any(player.player_id == target_id for player in (red_team_players + green_team_players))
+                    
+                    if attacker_exists and target_exists:
+                        attacker = next(player for player in (red_team_players + green_team_players) if player.player_id == attacker_id)
+                        target = next(player for player in (red_team_players + green_team_players) if player.player_id == target_id)
+                        action_message = f"Player {attacker.player_name} hit Player {target.player_name}"
+                        print(action_message)
+                        
+                        response_id = process_action(attacker_id, target_id)
+                        print(f"Response ID: {response_id}")
+                    else:
+                        print("Base Hit")
+
+
+                        
 
     except Exception as e:
         logging.error(f"Server error: {e}")
     finally:
         server_socket.close()
 
-
-# Process player action based on attacker_id and target_id
+        
 def process_action(attacker_id, target_id):
-    if target_id == 43 or target_id == 53:
-        # Handle base capture
-        if target_id == 43:
-            add_points_to_player(attacker_id, 100, "B")  # Red player captures green base
-        elif target_id == 53:
-            add_points_to_player(attacker_id, 100, "B")  # Green player captures red base
-        return attacker_id  # Return attacker’s ID for base capture
-    else:
-        # Handle regular hit
-        if is_same_team(attacker_id, target_id):
-            add_points_to_player(attacker_id, -10)  # Friendly fire penalty
-            return attacker_id
-        else:
-            add_points_to_player(attacker_id, 10)  # Regular hit score
-            return target_id
+    add_points_to_player(attacker_id, 10) 
+    return target_id
 
 
 # Updating the team score display for either the Red or Green team
 def update_team_score_display(team):
     if team == "Red":
-        total_score = sum(player.get('score', 0) for player in red_team_players)
-        red_team_score.config(text=str(total_score))
+        total_score = sum(player.get("score",0) for player in red_team_players)
+        #red_team_score.config(text=str(total_score))
+        print(f"Team {team} {total_score}")
     elif team == "Green":
-        total_score = sum(player.get('score', 0) for player in green_team_players)
-        green_team_score.config(text=str(total_score))
+        total_score = sum(player.get("score", 0) for player in green_team_players)
+        #green_team_score.config(text=str(total_score))
+        print(f"Team {team} {total_score}")
 
-# Utility functions
-def is_same_team(attacker_id, target_id):
-    # Check if both players are in the red team
-    if any(player['id'] == attacker_id for player in red_team_players) and \
-       any(player['id'] == target_id for player in red_team_players):
-        return True
-    # Check if both players are in the green team
-    elif any(player['id'] == attacker_id for player in green_team_players) and \
-         any(player['id'] == target_id for player in green_team_players):
-        return True
-    # Players are on different teams
-    return False
+
 
 # Adding points to a player based on their ID and updating their badge if needed
 def add_points_to_player(player_id, points, badge=None):
     # Update score for red team player if found
     for player in red_team_players:
-        if player['id'] == player_id:
-            player['score'] = player.get('score', 0) + points
+        if player.player_id == player_id:
+            player.score = player.get('score', 0) + points
             if badge:
-                player['name'] = f"{badge} {player['name']}"
+                player.player_name = f"{badge}{player.player_name}"
             update_team_score_display("Red")
             return
 
     # Update score for green team player if found
     for player in green_team_players:
-        if player['id'] == player_id:
-            player['score'] = player.get('score', 0) + points
+        if player.player_id == player_id:
+            player.score = player.get('score', 0) + points
             if badge:
-                player['name'] = f"{badge} {player['name']}"
+                player.player_name = f"{badge} {player.player_name}"
             update_team_score_display("Green")
             return
 
@@ -489,27 +543,8 @@ def start_server():
     server_thread.start()
 
 
-def listen_for_broadcasts():
-    try:
-        listen_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        listen_socket.bind(('', BROADCAST_PORT))
-        logging.info(f"Listening for broadcasts on port {BROADCAST_PORT}...")
-
-        while True:
-            data, addr = listen_socket.recvfrom(1024)
-            logging.info(f"Received broadcast from {addr}: {data.decode('utf-8')}")
-    except Exception as e:
-        logging.error(f"Broadcast listener error: {e}")
-    finally:
-        listen_socket.close()
-
-def start_broadcast_listener():
-    listener_thread = threading.Thread(target=listen_for_broadcasts)
-    listener_thread.daemon = True
-    listener_thread.start()
 
 if __name__ == "__main__":
     start_background_music_thread()
     start_server()
-    #start_broadcast_listener()
     show_splash_screen()

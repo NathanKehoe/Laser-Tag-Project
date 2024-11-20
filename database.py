@@ -1,12 +1,7 @@
 #pre-refactor
 
 import psycopg2
-
-DB_NAME = "photon"
-DB_USER = "grparish@uark.edu"  
-DB_PASSWORD = "password"  
-DB_HOST = "localhost" 
-DB_PORT = "5432"  
+from config import DB_NAME, DB_USER,  DB_HOST, DB_PORT
 
 # Connect to PostgreSQL database
 def connect():
@@ -14,7 +9,6 @@ def connect():
         conn = psycopg2.connect(
             dbname=DB_NAME,
             user=DB_USER,
-            password=DB_PASSWORD,
             host=DB_HOST,
             port=DB_PORT
         )

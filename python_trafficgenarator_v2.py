@@ -3,7 +3,7 @@ import random
 import time
 
 bufferSize  = 1024
-serverAddressPort   = ("127.0.0.1", 7500) # changed back to original. must work with original.
+serverAddressPort   = ("127.0.0.1", 7500)
 clientAddressPort   = ("127.0.0.1", 7501)
 
 
@@ -69,9 +69,9 @@ while True:
 	received_data = received_data.decode('utf-8')
 	print ("Received from game software: " + received_data)
 	print ('')
-	counter = counter + 1;
+	counter = counter + 1
 	if received_data == '221':
-		break;
+		break
 	time.sleep(random.randint(1,3))
 	
 print("program complete")
