@@ -10,8 +10,9 @@ import time
 from database import connect, check_for_player, add_player, remove_player
 from config import DB_NAME, DB_USER, DB_HOST, DB_PORT, BROADCAST_PORT, SERVER_PORT
 import random
-# import for music
 import pygame
+import queue  # Import queue module for thread-safe communication
+from threading import Event  # Import Event for server stop control
 
 # Initialize pygame mixer for music playback
 pygame.mixer.init()
@@ -24,7 +25,7 @@ LARGE_FONT = ("Arial", 24)
 MEDIUM_FONT = ("Arial", 18)
 SMALL_FONT = ("Arial", 14)
 
-# song directory
+# Song directory
 SONG_DIRECTORY = "assets/music"
 song_files = [f for f in os.listdir(SONG_DIRECTORY) if f.endswith('.mp3')]
 
@@ -33,33 +34,38 @@ root = None
 red_team_players = []
 green_team_players = []
 countdown_running = True
-
+event_queue = queue.Queue()  # Create a global event queue
+red_team_score_label = None  # Declare global variables for team score labels
+green_team_score_label = None
+server_stop_event = Event()  # Initialize threading.Event for server stop
+broadcastAllowed = True
 
 class Player:
-        def __init__(self, player_id, player_name, score, equipment_id=None):
-            self.player_id = player_id
-            self.player_name = player_name
-            self.score = score
-            self.equipment_id = equipment_id
+    def __init__(self, player_id, player_name, score, equipment_id=None):
+        self.player_id = player_id
+        self.player_name = player_name
+        self.score = score
+        self.equipment_id = equipment_id
+        self.label = None  # Store the player's label
 
-        def __str__(self):
-            return f"Player ID: {self.player_id}, Name: {self.player_name}, Score: {self.score}, Equipment ID: {self.equipment_id}"
+    def __str__(self):
+        return f"Player ID: {self.player_id}, Name: {self.player_name}, Score: {self.score}, Equipment ID: {self.equipment_id}"
 
-        def update_equipment_id(self, new_equipment_id):
-            self.equipment_id = new_equipment_id
+    def update_equipment_id(self, new_equipment_id):
+        self.equipment_id = new_equipment_id
 
-        def get(self, attribute, default=None):
-            return getattr(self, attribute, default)
-    
+    def get(self, attribute, default=None):
+        return getattr(self, attribute, default)
+
 broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
-# play background music on endless loop
+# Play background music on an endless loop
 def play_background_music():
     if not song_files:
         logging.warning("No songs found in the directory.")
         return
-    
+
     while True:
         song_path = os.path.join(SONG_DIRECTORY, random.choice(song_files))
         pygame.mixer.music.load(song_path)
@@ -70,28 +76,27 @@ def play_background_music():
         while pygame.mixer.music.get_busy():
             time.sleep(1)  # Check every second if the song has finished
 
-# play background music on separate thread
+# Play background music on a separate thread
 def start_background_music_thread():
     """Start a separate thread to play background music."""
     music_thread = threading.Thread(target=play_background_music)
     music_thread.daemon = True  # Ensures thread closes when main program exits
     music_thread.start()
 
-# Maybe move these to another file
 def broadcast_game_start():
     try:
         while countdown_running:
-            broadcast_socket.sendto(b'202', ('127.0.0.1', BROADCAST_PORT))
-            time.sleep(0.5)  # Delay between broadcasts
+            if broadcastAllowed:
+                broadcast_socket.sendto(b'202', ('127.0.0.1', BROADCAST_PORT))
+                time.sleep(1)  # Delay between broadcasts
     except Exception as e:
         logging.error(f"Error during broadcasting: {e}")
     finally:
         broadcast_socket.close()
         logging.info("Broadcast socket closed. Game start signal sent (202)")
 
-
-
 def broadcast_game_end():
+    broadcastAllowed = False
     broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     for _ in range(3):
@@ -99,7 +104,6 @@ def broadcast_game_end():
         time.sleep(0.5)
     broadcast_socket.close()
     logging.info("Game end signal sent (221)")
-
 
 def show_splash_screen():
     splash_root = tk.Tk()
@@ -139,14 +143,11 @@ def main_screen():
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    
+
     # Configure grid weights
     root.grid_rowconfigure(0, weight=1)
     root.grid_columnconfigure(0, weight=1)
     root.grid_columnconfigure(1, weight=1)
-
-    # Creating frames for Red Team and Green Team
-    
 
     # Lists to hold references to Entry widgets
     red_team_id_entries = []
@@ -164,11 +165,11 @@ def main_screen():
 
     def start_game():
         root.withdraw()
+        start_server()  # Start the server when the game starts
         third_screen()
-        
-        
 
     def third_screen():
+        global red_team_score_label, green_team_score_label
         third_root = tk.Toplevel(root)
         third_root.title("Player Action Screen")
         third_root.geometry("1280x720")
@@ -183,6 +184,7 @@ def main_screen():
 
         # Back to Entry Screen button
         def return_to_main():
+            server_stop_event.set()
             third_root.destroy()
             root.deiconify()
             broadcast_game_end()
@@ -205,17 +207,21 @@ def main_screen():
         tk.Label(red_team_frame, text="Red Team", font=("Arial", 36, "bold"), bg="#500000", fg="white").pack(pady=20)
         for player in red_team_players:
             name = player.get("player_name", "Unknown")
-            tk.Label(red_team_frame, text=f"{name}  0", font=("Arial", 24), bg="#500000", fg="white").pack(pady=5)
-        red_team_score = tk.Label(red_team_frame, text="0", font=("Arial", 48, "bold"), bg="#500000", fg="white")
-        red_team_score.pack(side="bottom", pady=20)
+            player_label = tk.Label(red_team_frame, text=f"{name}  {player.score}", font=("Arial", 24), bg="#500000", fg="white")
+            player_label.pack(pady=5)
+            player.label = player_label  # Store the label reference
+        red_team_score_label = tk.Label(red_team_frame, text="0", font=("Arial", 48, "bold"), bg="#500000", fg="white")
+        red_team_score_label.pack(side="bottom", pady=20)
 
         # Green Team Label and Player List
         tk.Label(green_team_frame, text="Green Team", font=("Arial", 36, "bold"), bg="#004d00", fg="white").pack(pady=20)
         for player in green_team_players:
             name = player.get("player_name", "Unknown")
-            tk.Label(green_team_frame, text=f"{name}  0", font=("Arial", 24), bg="#004d00", fg="white").pack(pady=5)
-        green_team_score = tk.Label(green_team_frame, text="0", font=("Arial", 48, "bold"), bg="#004d00", fg="white")
-        green_team_score.pack(side="bottom", pady=20)
+            player_label = tk.Label(green_team_frame, text=f"{name}  {player.score}", font=("Arial", 24), bg="#004d00", fg="white")
+            player_label.pack(pady=5)
+            player.label = player_label  # Store the label reference
+        green_team_score_label = tk.Label(green_team_frame, text="0", font=("Arial", 48, "bold"), bg="#004d00", fg="white")
+        green_team_score_label.pack(side="bottom", pady=20)
 
         # Event Log Title in the Center
         tk.Label(event_frame, text="EVENT LOG", font=("Arial", 36, "bold"), bg="black", fg="white").pack(pady=20)
@@ -231,6 +237,39 @@ def main_screen():
         def add_event(event_message):
             event_text.insert("end", f"{event_message}\n")
             event_text.see("end")  # Scroll to the latest event
+
+        # Function to find a player by ID
+        def find_player_by_id(player_id):
+            for player in red_team_players + green_team_players:
+                if player.player_id == player_id:
+                    return player
+            return None
+
+        # Function to process the event queue
+        def process_event_queue():
+            while not event_queue.empty():
+                event = event_queue.get()
+                if event[0] == 'hit':
+                    attacker_id = event[1]
+                    target_id = event[2]
+                    attacker = find_player_by_id(attacker_id)
+                    target = find_player_by_id(target_id)
+                    if attacker and target:
+                        add_event(f"Player {attacker.player_name} hit Player {target.player_name}")
+                        add_points_to_player(attacker_id, 10)
+                elif event[0] == 'base_capture':
+                    attacker_id = event[1]
+                    base_name = event[2]
+                    attacker = find_player_by_id(attacker_id)
+                    if attacker:
+                        add_event(f"Player {attacker.player_name} captured {base_name}")
+                        add_points_to_player(attacker_id, 100)
+            # Schedule the next call to this function
+            if not server_stop_event.is_set():
+                third_root.after(100, process_event_queue)
+
+        # Start processing the event queue
+        process_event_queue()
 
         # 30-Second Countdown with Images
         countdown_label = tk.Label(event_frame, bg="black")
@@ -270,22 +309,17 @@ def main_screen():
             minutes, seconds = divmod(count, 60)
             timer_label.config(text=f"{minutes}:{seconds:02d}")
             if count > 0:
-                
                 third_root.after(1000, start_game_countdown, count - 1)
             else:
                 broadcast_game_end()
-
+                server_stop_event.set()
+                third_root.destroy()
+                root.deiconify()
 
         # Start the 30-second countdown with images
         start_initial_countdown()
         third_root.mainloop()
 
-
-
-    
-
-
-# Now, you can refactor your function to use the Player class
     def save_player_data(team, player_id_entry, name_entry, player_array, parent_window):
         player_id = player_id_entry.get().strip()
         player_name = name_entry.get().strip()
@@ -337,12 +371,6 @@ def main_screen():
 
         else:
             messagebox.showerror("Input Error", "Both fields (ID and Name) must be filled!")
-
-
-
-
-
-
 
     # Create frames for Red Team and Green Team
     red_team_frame = tk.Frame(root, bg="#500000", bd=2, relief="ridge")
@@ -455,96 +483,85 @@ def server():
     try:
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         server_socket.bind(('127.0.0.1', SERVER_PORT))
+        server_socket.settimeout(1.0)  # Set timeout to 1 second
         logging.info(f"Server is listening on port {SERVER_PORT}...")
 
-        while True:
-            data, addr = server_socket.recvfrom(1024)
-            message = data.decode('utf-8')
-        
-            if ':' in message:
-                attacker_id, target_id = message.split(':')
-                if attacker_id.isdigit() and target_id.isdigit():
-                    attacker_id = int(attacker_id)
-                    target_id = int(target_id)
+        client_addresses = set()  # Keep track of client addresses
 
-                    if target_id == 43 or target_id == 53:
-                        if target_id == 43:
-                            add_points_to_player(attacker_id, 100, "B")  # Red player captures green base
-                        elif target_id == 53:
-                            add_points_to_player(attacker_id, 100, "B")  # Green player captures red base
+        while not server_stop_event.is_set():
+            try:
+                data, addr = server_socket.recvfrom(1024)
+                client_addresses.add(addr)  # Add client address to the set
+                message = data.decode('utf-8')
 
-                    attacker_exists = any(player.player_id == attacker_id for player in (red_team_players + green_team_players))
-                    
-                    target_exists = any(player.player_id == target_id for player in (red_team_players + green_team_players))
-                    
-                    if attacker_exists and target_exists:
-                        attacker = next(player for player in (red_team_players + green_team_players) if player.player_id == attacker_id)
-                        target = next(player for player in (red_team_players + green_team_players) if player.player_id == target_id)
-                        action_message = f"Player {attacker.player_name} hit Player {target.player_name}"
-                        print(action_message)
-                        
-                        response_id = process_action(attacker_id, target_id)
-                        print(f"Response ID: {response_id}")
-                    else:
-                        print("Base Hit")
+                if ':' in message:
+                    attacker_id_str, target_id_str = message.split(':')
+                    if attacker_id_str.isdigit() and target_id_str.isdigit():
+                        attacker_id = int(attacker_id_str)
+                        target_id = int(target_id_str)
 
+                        if target_id == 43 or target_id == 53:
+                            # Base capture events
+                            base_name = 'Green Base' if target_id == 43 else 'Red Base'
+                            event_queue.put(('base_capture', attacker_id, base_name))
+                        else:
+                            # Hit events
+                            attacker_exists = any(player.player_id == attacker_id for player in (red_team_players + green_team_players))
+                            target_exists = any(player.player_id == target_id for player in (red_team_players + green_team_players))
 
-                        
+                            if attacker_exists and target_exists:
+                                event_queue.put(('hit', attacker_id, target_id))
+                            else:
+                                print("Unknown player IDs")
+                else:
+                    print("Invalid message format")
+
+                # Send an acknowledgment back to the client
+                server_socket.sendto(b'ACK', addr)
+            except socket.timeout:
+                # Timeout occurred, check the stop event
+                continue
+
+        # After the loop exits, send '221' multiple times to all client addresses
+        for client_addr in client_addresses:
+            for _ in range(3):  # Send the signal 3 times
+                server_socket.sendto(b'221', client_addr)
+                logging.info(f"Sent game end signal to {client_addr}")
+                time.sleep(0.5)  # Optional delay between signals
 
     except Exception as e:
         logging.error(f"Server error: {e}")
     finally:
         server_socket.close()
 
-        
-def process_action(attacker_id, target_id):
-    add_points_to_player(attacker_id, 10) 
-    return target_id
-
-
-# Updating the team score display for either the Red or Green team
-def update_team_score_display(team):
-    if team == "Red":
-        total_score = sum(player.get("score",0) for player in red_team_players)
-        #red_team_score.config(text=str(total_score))
-        print(f"Team {team} {total_score}")
-    elif team == "Green":
-        total_score = sum(player.get("score", 0) for player in green_team_players)
-        #green_team_score.config(text=str(total_score))
-        print(f"Team {team} {total_score}")
-
-
-
-# Adding points to a player based on their ID and updating their badge if needed
 def add_points_to_player(player_id, points, badge=None):
-    # Update score for red team player if found
-    for player in red_team_players:
+    for player in red_team_players + green_team_players:
         if player.player_id == player_id:
-            player.score = player.get('score', 0) + points
-            if badge:
-                player.player_name = f"{badge}{player.player_name}"
-            update_team_score_display("Red")
-            return
-
-    # Update score for green team player if found
-    for player in green_team_players:
-        if player.player_id == player_id:
-            player.score = player.get('score', 0) + points
+            player.score += points
             if badge:
                 player.player_name = f"{badge} {player.player_name}"
-            update_team_score_display("Green")
+            # Update player's label
+            if player.label:
+                player.label.config(text=f"{player.player_name}  {player.score}")
+            # Update team score
+            team = "Red" if player in red_team_players else "Green"
+            update_team_score_display(team)
             return
 
-
+def update_team_score_display(team):
+    if team == "Red":
+        total_score = sum(player.score for player in red_team_players)
+        red_team_score_label.config(text=str(total_score))
+    elif team == "Green":
+        total_score = sum(player.score for player in green_team_players)
+        green_team_score_label.config(text=str(total_score))
 
 def start_server():
+    server_stop_event.clear()
     server_thread = threading.Thread(target=server)
     server_thread.daemon = True
     server_thread.start()
 
-
-
 if __name__ == "__main__":
     start_background_music_thread()
-    start_server()
     show_splash_screen()
