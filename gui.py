@@ -173,8 +173,12 @@ def main_screen():
     esc_instruction_label.grid(row=4, column=0, columnspan=2, pady=10)
 
     def print_players():
-        logging.info(f"Red Team Players: {red_team_players}")
-        logging.info(f"Green Team Players: {green_team_players}")
+        logging.info(f"Red Team Players:")
+        for player in red_team_players:
+            logging.info(f"Name: {player.player_name} ID: {player.player_id}")
+        logging.info(f"Green Team Players:")
+        for player in green_team_players:
+            logging.info(f"Name: {player.player_name} ID: {player.player_id}")
 
     def start_game():
         root.withdraw()
