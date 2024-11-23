@@ -11,8 +11,8 @@ from database import connect, check_for_player, add_player, remove_player
 from config import DB_NAME, DB_USER, DB_HOST, DB_PORT, BROADCAST_PORT, SERVER_PORT
 import random
 import pygame
-import queue  # Import queue module for thread-safe communication
-from threading import Event  # Import Event for server stop control
+import queue
+from threading import Event
 
 # Initialize pygame mixer for music playback
 pygame.mixer.init()
@@ -21,8 +21,8 @@ pygame.mixer.init()
 logging.basicConfig(level=logging.INFO)
 
 # Define fonts
-LARGE_FONT = ("Arial", 24)
-MEDIUM_FONT = ("Arial", 18)
+LARGE_FONT = ("Arial", 20)
+MEDIUM_FONT = ("Arial", 15)
 SMALL_FONT = ("Arial", 14)
 
 # Song directory
@@ -38,15 +38,25 @@ event_queue = queue.Queue()  # Create a global event queue
 red_team_score_label = None  # Declare global variables for team score labels
 green_team_score_label = None
 server_stop_event = Event()  # Initialize threading.Event for server stop
-broadcastAllowed = True
+broadcast_allowed_event = Event()  # Initialize threading.Event for broadcasting control
+broadcast_allowed_event.set()  # Initially allow broadcasting
 
 class Player:
     def __init__(self, player_id, player_name, score, equipment_id=None):
         self.player_id = player_id
+        self.original_name = player_name  # Keep the original name
         self.player_name = player_name
         self.score = score
         self.equipment_id = equipment_id
         self.label = None  # Store the player's label
+        self.base_hits = 0  # Initialize base hits
+
+    def add_base_hit(self):
+        self.base_hits += 1
+        # Add 'B' once per base hit
+        self.player_name = f"{self.original_name} {'B' * self.base_hits}"
+        if self.label:
+            self.label.config(text=f"{self.player_name}  {self.score}")
 
     def __str__(self):
         return f"Player ID: {self.player_id}, Name: {self.player_name}, Score: {self.score}, Equipment ID: {self.equipment_id}"
@@ -56,9 +66,6 @@ class Player:
 
     def get(self, attribute, default=None):
         return getattr(self, attribute, default)
-
-broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
 # Play background music on an endless loop
 def play_background_music():
@@ -84,11 +91,13 @@ def start_background_music_thread():
     music_thread.start()
 
 def broadcast_game_start():
+    global broadcast_socket
+    broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     try:
-        while countdown_running:
-            if broadcastAllowed:
-                broadcast_socket.sendto(b'202', ('127.0.0.1', BROADCAST_PORT))
-                time.sleep(1)  # Delay between broadcasts
+        while broadcast_allowed_event.is_set():
+            broadcast_socket.sendto(b'202', ('127.0.0.1', BROADCAST_PORT))
+            time.sleep(1)  # Delay between broadcasts
     except Exception as e:
         logging.error(f"Error during broadcasting: {e}")
     finally:
@@ -96,7 +105,7 @@ def broadcast_game_start():
         logging.info("Broadcast socket closed. Game start signal sent (202)")
 
 def broadcast_game_end():
-    broadcastAllowed = False
+    broadcast_allowed_event.clear()  # Stop broadcasting
     broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     for _ in range(3):
@@ -108,7 +117,10 @@ def broadcast_game_end():
 def show_splash_screen():
     splash_root = tk.Tk()
     splash_root.overrideredirect(True)
-    splash_root.geometry("1280x720+0+0")  # Fullscreen
+    # splash_root.geometry("1280x720+0+0")  # Fullscreen
+    screen_width = splash_root.winfo_screenwidth()
+    screen_height = splash_root.winfo_screenheight()
+    splash_root.geometry(f"{screen_width}x{screen_height}+0+0")
 
     try:
         splash_image = Image.open("assets/splash_image.png")
@@ -137,6 +149,7 @@ def main_screen():
     root.title("Entry Terminal")
     root.geometry("1280x720")
     root.configure(bg="black")
+    root.attributes("-fullscreen", True)
 
     # Add binding to close the application when Esc is pressed
     root.bind("<Escape>", lambda event: root.destroy())
@@ -185,9 +198,9 @@ def main_screen():
         # Back to Entry Screen button
         def return_to_main():
             server_stop_event.set()
+            broadcast_game_end()  # Stop broadcasting and send end signal
             third_root.destroy()
             root.deiconify()
-            broadcast_game_end()
 
         tk.Button(third_root, text="Back to Entry Screen", font=("Arial", 18), command=return_to_main).grid(row=1, column=1, pady=20)
 
@@ -235,8 +248,9 @@ def main_screen():
 
         # Function to add events to the log
         def add_event(event_message):
-            event_text.insert("end", f"{event_message}\n")
-            event_text.see("end")  # Scroll to the latest event
+            if event_text.winfo_exists():  # Check if the widget still exists
+                event_text.insert("end", f"{event_message}\n")
+                event_text.see("end")  # Scroll to the latest event
 
         # Function to find a player by ID
         def find_player_by_id(player_id):
@@ -264,8 +278,17 @@ def main_screen():
                     if attacker:
                         add_event(f"Player {attacker.player_name} captured {base_name}")
                         add_points_to_player(attacker_id, 100)
-            # Schedule the next call to this function
-            if not server_stop_event.is_set():
+                        attacker.add_base_hit()
+                        # Display the "B" in the event log
+                        add_event(f"Player {attacker.player_name} has a 'B'. Total B's: {attacker.base_hits}")
+                        if attacker.base_hits >= 3:
+                            add_event(f"Player {attacker.player_name} has reached 3 base hits. Ending game.")
+                            broadcast_game_end()
+                            server_stop_event.set()
+                            third_root.destroy()
+                            root.deiconify()
+            # Schedule the next call to this function only if the window still exists
+            if not server_stop_event.is_set() and third_root.winfo_exists():
                 third_root.after(100, process_event_queue)
 
         # Start processing the event queue
@@ -295,7 +318,25 @@ def main_screen():
                 global countdown_running
                 countdown_running = True  # Start broadcasting
                 threading.Thread(target=broadcast_game_start, daemon=True).start()
+                # Start the simulation thread **after** the countdown ends
+                simulation_thread = threading.Thread(target=simulate_base_captures, daemon=True)
+                simulation_thread.start()
                 start_game_countdown(360)  # Start the main game timer after countdown
+
+        # Function to simulate additional base captures
+        def simulate_base_captures():
+            while not server_stop_event.is_set():
+                time.sleep(10)  # Wait for 10 seconds
+                # Randomly choose a team and player
+                team = random.choice(['Red', 'Green'])
+                if team == 'Red' and red_team_players:
+                    player = random.choice(red_team_players)
+                    base_name = 'Red Base'
+                    event_queue.put(('base_capture', player.player_id, base_name))
+                elif team == 'Green' and green_team_players:
+                    player = random.choice(green_team_players)
+                    base_name = 'Green Base'
+                    event_queue.put(('base_capture', player.player_id, base_name))
 
         # Main Game Timer (6 minutes)
         timer_frame = tk.Frame(event_frame, bg="black")
@@ -390,15 +431,15 @@ def main_screen():
         green_team_frame.grid_columnconfigure(i, weight=1)
 
     # Team Labels
-    tk.Label(red_team_frame, text="RED TEAM", font=LARGE_FONT, bg="#500000", fg="white").grid(row=0, column=0, columnspan=4, pady=10)
-    tk.Label(green_team_frame, text="GREEN TEAM", font=LARGE_FONT, bg="#004d00", fg="white").grid(row=0, column=0, columnspan=4, pady=10)
+    tk.Label(red_team_frame, text="RED TEAM", font=LARGE_FONT, bg="#500000", fg="white").grid(row=0, column=0, columnspan=4, pady=10, ipady=20)
+    tk.Label(green_team_frame, text="GREEN TEAM", font=LARGE_FONT, bg="#004d00", fg="white").grid(row=0, column=0, columnspan=4, pady=10, ipady=20)
 
     # Add column headers
-    tk.Label(red_team_frame, text="No.", font=MEDIUM_FONT, bg="#500000", fg="white", width=5).grid(row=1, column=0)
+    tk.Label(red_team_frame, text="No.", font=MEDIUM_FONT, bg="#500000", fg="white", width=5).grid(row=1, column=0, ipady=10)
     tk.Label(red_team_frame, text="ID", font=MEDIUM_FONT, bg="#500000", fg="white").grid(row=1, column=1)
     tk.Label(red_team_frame, text="Name", font=MEDIUM_FONT, bg="#500000", fg="white").grid(row=1, column=2)
 
-    tk.Label(green_team_frame, text="No.", font=MEDIUM_FONT, bg="#004d00", fg="white", width=5).grid(row=1, column=0)
+    tk.Label(green_team_frame, text="No.", font=MEDIUM_FONT, bg="#004d00", fg="white", width=5).grid(row=1, column=0, ipady=10)
     tk.Label(green_team_frame, text="ID", font=MEDIUM_FONT, bg="#004d00", fg="white").grid(row=1, column=1)
     tk.Label(green_team_frame, text="Name", font=MEDIUM_FONT, bg="#004d00", fg="white").grid(row=1, column=2)
 
@@ -541,7 +582,7 @@ def add_points_to_player(player_id, points, badge=None):
             if badge:
                 player.player_name = f"{badge} {player.player_name}"
             # Update player's label
-            if player.label:
+            if player.label and player.label.winfo_exists():
                 player.label.config(text=f"{player.player_name}  {player.score}")
             # Update team score
             team = "Red" if player in red_team_players else "Green"
@@ -551,10 +592,12 @@ def add_points_to_player(player_id, points, badge=None):
 def update_team_score_display(team):
     if team == "Red":
         total_score = sum(player.score for player in red_team_players)
-        red_team_score_label.config(text=str(total_score))
+        if red_team_score_label and red_team_score_label.winfo_exists():
+            red_team_score_label.config(text=str(total_score))
     elif team == "Green":
         total_score = sum(player.score for player in green_team_players)
-        green_team_score_label.config(text=str(total_score))
+        if green_team_score_label and green_team_score_label.winfo_exists():
+            green_team_score_label.config(text=str(total_score))
 
 def start_server():
     server_stop_event.clear()
