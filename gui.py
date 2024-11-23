@@ -11,8 +11,8 @@ from database import connect, check_for_player, add_player, remove_player
 from config import DB_NAME, DB_USER, DB_HOST, DB_PORT, BROADCAST_PORT, SERVER_PORT
 import random
 import pygame
-import queue 
-from threading import Event 
+import queue
+from threading import Event
 
 # Initialize pygame mixer for music playback
 pygame.mixer.init()
@@ -21,8 +21,8 @@ pygame.mixer.init()
 logging.basicConfig(level=logging.INFO)
 
 # Define fonts
-LARGE_FONT = ("Arial", 24)
-MEDIUM_FONT = ("Arial", 18)
+LARGE_FONT = ("Arial", 20)
+MEDIUM_FONT = ("Arial", 15)
 SMALL_FONT = ("Arial", 14)
 
 # Song directory
@@ -117,7 +117,10 @@ def broadcast_game_end():
 def show_splash_screen():
     splash_root = tk.Tk()
     splash_root.overrideredirect(True)
-    splash_root.geometry("1280x720+0+0")  # Fullscreen
+    # splash_root.geometry("1280x720+0+0")  # Fullscreen
+    screen_width = splash_root.winfo_screenwidth()
+    screen_height = splash_root.winfo_screenheight()
+    splash_root.geometry(f"{screen_width}x{screen_height}+0+0")
 
     try:
         splash_image = Image.open("assets/splash_image.png")
@@ -146,6 +149,7 @@ def main_screen():
     root.title("Entry Terminal")
     root.geometry("1280x720")
     root.configure(bg="black")
+    root.attributes("-fullscreen", True)
 
     # Add binding to close the application when Esc is pressed
     root.bind("<Escape>", lambda event: root.destroy())
@@ -427,15 +431,15 @@ def main_screen():
         green_team_frame.grid_columnconfigure(i, weight=1)
 
     # Team Labels
-    tk.Label(red_team_frame, text="RED TEAM", font=LARGE_FONT, bg="#500000", fg="white").grid(row=0, column=0, columnspan=4, pady=10)
-    tk.Label(green_team_frame, text="GREEN TEAM", font=LARGE_FONT, bg="#004d00", fg="white").grid(row=0, column=0, columnspan=4, pady=10)
+    tk.Label(red_team_frame, text="RED TEAM", font=LARGE_FONT, bg="#500000", fg="white").grid(row=0, column=0, columnspan=4, pady=10, ipady=20)
+    tk.Label(green_team_frame, text="GREEN TEAM", font=LARGE_FONT, bg="#004d00", fg="white").grid(row=0, column=0, columnspan=4, pady=10, ipady=20)
 
     # Add column headers
-    tk.Label(red_team_frame, text="No.", font=MEDIUM_FONT, bg="#500000", fg="white", width=5).grid(row=1, column=0)
+    tk.Label(red_team_frame, text="No.", font=MEDIUM_FONT, bg="#500000", fg="white", width=5).grid(row=1, column=0, ipady=10)
     tk.Label(red_team_frame, text="ID", font=MEDIUM_FONT, bg="#500000", fg="white").grid(row=1, column=1)
     tk.Label(red_team_frame, text="Name", font=MEDIUM_FONT, bg="#500000", fg="white").grid(row=1, column=2)
 
-    tk.Label(green_team_frame, text="No.", font=MEDIUM_FONT, bg="#004d00", fg="white", width=5).grid(row=1, column=0)
+    tk.Label(green_team_frame, text="No.", font=MEDIUM_FONT, bg="#004d00", fg="white", width=5).grid(row=1, column=0, ipady=10)
     tk.Label(green_team_frame, text="ID", font=MEDIUM_FONT, bg="#004d00", fg="white").grid(row=1, column=1)
     tk.Label(green_team_frame, text="Name", font=MEDIUM_FONT, bg="#004d00", fg="white").grid(row=1, column=2)
 
